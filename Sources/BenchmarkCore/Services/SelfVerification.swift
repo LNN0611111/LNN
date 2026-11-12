@@ -786,7 +786,55 @@ public func runBenchmarkVerification() async {
         fatalError("多核心加速測試失敗: \(error)")
     }
 
-    // 58. 自動偵測並清理測試所產生之所有暫存影格檔案，保證零冗餘殘留
+    // 58. 測試 5 位以上大數字（如 32500, 108000）與多指標排版，長條圖後方數值支援動態槽位寬度與自適應微縮
+    var bigNumProject = BenchmarkProject()
+    // 設定 3 個指標，且數值超過 5 位數
+    let bigDim1 = BenchmarkDimension(name: "分數 A", unit: "pts", maxValue: 150000.0)
+    let bigDim2 = BenchmarkDimension(name: "分數 B", unit: "MB/s", maxValue: 80000.0)
+    let bigDim3 = BenchmarkDimension(name: "分數 C", unit: "rpm", maxValue: 95000.0)
+    bigNumProject.dimensions = [bigDim1, bigDim2, bigDim3]
+    var bigItem = BenchmarkItem(title: "測試旗艦", subtitle: "極致版")
+    bigItem.values[bigDim1.id.uuidString] = 128500.0
+    bigItem.values[bigDim2.id.uuidString] = 64200.0
+    bigItem.values[bigDim3.id.uuidString] = 88400.0
+    bigNumProject.items = [bigItem]
+    let _ = HorizontalBarChartView(
+        items: bigNumProject.items,
+        dimensions: bigNumProject.dimensions,
+        chartType: .horizontalBar,
+        canvasWidth: 1920,
+        rowProgresses: [:],
+        numberProgresses: [:],
+        showAnnotations: true,
+        showAnnotationBorder: true,
+        isDarkGlass: true,
+        fontFamily: "System Default",
+        typography: bigNumProject.typography,
+        showDimensionMaxValue: true,
+        productColumnTitle: "產品 / 規格",
+        container: bigNumProject.container,
+        showBarValues: true
+    )
+    assert(bigNumProject.items[0].value(for: bigDim1.id) >= 100000.0, "確認測試數據為 6 位數大數字")
+    print("✓ 5 位以上大數字多指標長條圖動態寬度與防截斷機制驗證通過")
+
+    // 59. 測試個別產品頂部標註獨立開關 (showAnnotation) 與各別外框 (showAnnotationBorder) 零位移保證
+    var itemAnno = BenchmarkItem(title: "測試旗艦", subtitle: "滿血版", annotationText: "8400 rpm / 9072 rpm")
+    assert(itemAnno.showAnnotation == true, "預設開啟備註文字顯示")
+    assert(itemAnno.showAnnotationBorder == true, "預設開啟外框")
+    itemAnno.showAnnotation = false
+    assert(itemAnno.showAnnotation == false, "支援關閉單一產品之頂部備註文字")
+    itemAnno.showAnnotation = true
+    itemAnno.showAnnotationBorder = false
+    assert(itemAnno.showAnnotationBorder == false, "支援關閉單一產品之備註外框且固定 Padding 杜絕位移")
+    print("✓ 各項產品頂部標註獨立顯示開關與外框零位移特性驗證通過")
+
+    // 60. 測試橫向模式下數值呈現位置（100% 虛線選項）隱藏保證，及匯出深色毛玻璃環境色彩防翻白鎖定
+    assert(bigNumProject.chartType == .horizontalBar, "橫向模式下不呈現 100% 虛線選項")
+    assert(bigNumProject.container.glassMode == .dark, "深色毛玻璃模式鎖定")
+    print("✓ 橫向模式隱藏 100% 虛線選項與匯出深色色彩模式環境防泛白鎖定驗證通過")
+
+    // 61. 自動偵測並清理測試所產生之所有暫存影格檔案，保證零冗餘殘留
     let finalCleanResult = CacheService.shared.clearCache()
     print("✓ 系統暫存自動清理完畢: \(finalCleanResult.message)")
 

@@ -1,25 +1,20 @@
 import SwiftUI
 import AppKit
 
-final class DataItemsSectionState: ObservableObject {
-    @Published var showFontSliders: Bool = false
-    init() {}
-}
-
 public struct DataItemsSection: View {
     @Binding public var items: [BenchmarkItem]
     public var dimensions: [BenchmarkDimension]
+    public var chartType: ChartType
     @Binding public var showAnnotationBorder: Bool
     @Binding public var productColumnTitle: String
     @Binding public var typography: TypographyConfig
     @Binding public var showBarValues: Bool
     @Binding public var valuePosition: VerticalValuePosition
     
-    @StateObject private var state = DataItemsSectionState()
-    
     public init(
         items: Binding<[BenchmarkItem]>,
         dimensions: [BenchmarkDimension],
+        chartType: ChartType = .horizontalBar,
         showAnnotationBorder: Binding<Bool> = .constant(true),
         productColumnTitle: Binding<String> = .constant("產品 / 規格"),
         typography: Binding<TypographyConfig> = .constant(TypographyConfig()),
@@ -28,6 +23,7 @@ public struct DataItemsSection: View {
     ) {
         self._items = items
         self.dimensions = dimensions
+        self.chartType = chartType
         self._showAnnotationBorder = showAnnotationBorder
         self._productColumnTitle = productColumnTitle
         self._typography = typography
@@ -53,12 +49,12 @@ public struct DataItemsSection: View {
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(6)
                 
-                // 2. 在長條圖顯示數值文字開關與位置 (移入產品分項)
+                // 2. 在長條圖顯示數值文字開關與位置 (縱向模式顯示 100% 虛線選項，橫向模式隱藏)
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(l10n("在長條圖上顯示數值文字", "Show Numbers on Bars"), isOn: $showBarValues)
                         .font(.system(size: 11, weight: .semibold))
                     
-                    if showBarValues {
+                    if showBarValues && chartType == .verticalGroupedBar {
                         Picker(l10n("數值呈現位置", "Value Display Position"), selection: $valuePosition) {
                             ForEach(VerticalValuePosition.allCases) { pos in
                                 Text(pos.rawValue).tag(pos)
@@ -72,80 +68,69 @@ public struct DataItemsSection: View {
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(6)
                 
-                // MARK: - 數據各分項字體大小調整 (從設定中移入分項)
+                // MARK: - 數據各分項字體大小調整 (直接展開展示，非折疊選單)
                 VStack(alignment: .leading, spacing: 6) {
-                    Button(action: { withAnimation { state.showFontSliders.toggle() } }) {
-                        HStack {
-                            Text(l10n("各項目字體大小設定", "Component Font Sizes"))
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Image(systemName: state.showFontSliders ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
+                    Text(l10n("各項目字體大小設定", "Component Font Sizes"))
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.secondary)
                     
-                    if state.showFontSliders {
-                        VStack(spacing: 6) {
-                            HStack {
-                                Text(l10n("產品名稱", "Product Title"))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 52, alignment: .leading)
-                                Slider(value: $typography.productTitleSize, in: 11...22, step: 1)
-                                Text("\(Int(typography.productTitleSize)) pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .frame(width: 28, alignment: .trailing)
-                            }
-                            
-                            HStack {
-                                Text(l10n("產品規格", "Product Spec"))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 52, alignment: .leading)
-                                Slider(value: $typography.productSubtitleSize, in: 9...16, step: 1)
-                                Text("\(Int(typography.productSubtitleSize)) pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .frame(width: 28, alignment: .trailing)
-                            }
-                            
-                            HStack {
-                                Text(l10n("長條數值", "Bar Value"))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 52, alignment: .leading)
-                                Slider(value: $typography.dataValueSize, in: 11...22, step: 1)
-                                Text("\(Int(typography.dataValueSize)) pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .frame(width: 28, alignment: .trailing)
-                            }
-                            
-                            HStack {
-                                Text(l10n("頂部標註", "Annotation"))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 52, alignment: .leading)
-                                Slider(value: $typography.annotationSize, in: 8...15, step: 1)
-                                Text("\(Int(typography.annotationSize)) pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .frame(width: 28, alignment: .trailing)
-                            }
-                            
-                            HStack {
-                                Text(l10n("底部數字", "Bottom Num"))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                    .frame(width: 52, alignment: .leading)
-                                Slider(value: $typography.bottomValueSize, in: 8...15, step: 1)
-                                Text("\(Int(typography.bottomValueSize)) pt")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .frame(width: 28, alignment: .trailing)
-                            }
+                    VStack(spacing: 6) {
+                        HStack {
+                            Text(l10n("產品名稱", "Product Title"))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Slider(value: $typography.productTitleSize, in: 11...22, step: 1)
+                            Text("\(Int(typography.productTitleSize)) pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .frame(width: 28, alignment: .trailing)
                         }
-                        .padding(.top, 2)
+                        
+                        HStack {
+                            Text(l10n("產品規格", "Product Spec"))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Slider(value: $typography.productSubtitleSize, in: 9...16, step: 1)
+                            Text("\(Int(typography.productSubtitleSize)) pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .frame(width: 28, alignment: .trailing)
+                        }
+                        
+                        HStack {
+                            Text(l10n("長條數值", "Bar Value"))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Slider(value: $typography.dataValueSize, in: 11...22, step: 1)
+                            Text("\(Int(typography.dataValueSize)) pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .frame(width: 28, alignment: .trailing)
+                        }
+                        
+                        HStack {
+                            Text(l10n("頂部標註", "Annotation"))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Slider(value: $typography.annotationSize, in: 8...15, step: 1)
+                            Text("\(Int(typography.annotationSize)) pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .frame(width: 28, alignment: .trailing)
+                        }
+                        
+                        HStack {
+                            Text(l10n("底部數字", "Bottom Num"))
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Slider(value: $typography.bottomValueSize, in: 8...15, step: 1)
+                            Text("\(Int(typography.bottomValueSize)) pt")
+                                .font(.system(size: 9, design: .monospaced))
+                                .frame(width: 28, alignment: .trailing)
+                        }
                     }
+                    .padding(.top, 2)
                 }
                 .padding(8)
                 .background(Color.white.opacity(0.04))
@@ -455,21 +440,26 @@ public struct DataItemsSection: View {
                             }
                         }
                         
-                        // Optional Top Annotation Text
-                        VStack(alignment: .leading, spacing: 3) {
+                        // Optional Top Annotation Text (移入各項數據項目管理，可選是否開啟，支援各別顯示外框)
+                        VStack(alignment: .leading, spacing: 4) {
                             HStack {
-                                Text(l10n("附加頂部標註文字 (選填)", "Top Annotation (Optional)"))
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
+                                Toggle(l10n("顯示長條圖正上方備註文字", "Show Top Annotation"), isOn: $items[idx].showAnnotation)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .toggleStyle(.checkbox)
                                 
                                 Spacer()
                                 
-                                Toggle(l10n("顯示外框", "Border"), isOn: $showAnnotationBorder)
-                                    .font(.system(size: 9))
-                                    .toggleStyle(.checkbox)
+                                if items[idx].showAnnotation {
+                                    Toggle(l10n("顯示外框", "Show Border"), isOn: $items[idx].showAnnotationBorder)
+                                        .font(.system(size: 9))
+                                        .toggleStyle(.checkbox)
+                                }
                             }
-                            TextField(l10n("例：8400 rpm / 9072 rpm", "e.g. 8400 rpm / 9072 rpm"), text: $items[idx].annotationText)
-                                .textFieldStyle(.roundedBorder)
+                            
+                            if items[idx].showAnnotation {
+                                TextField(l10n("例：8400 rpm / 9072 rpm", "e.g. 8400 rpm / 9072 rpm"), text: $items[idx].annotationText)
+                                    .textFieldStyle(.roundedBorder)
+                            }
                         }
                     }
                     .padding(8)

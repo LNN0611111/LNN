@@ -12,6 +12,10 @@ public struct BenchmarkItem: Identifiable, Codable, Equatable, Sendable {
     public var values: [String: Double]
     /// Optional top annotation text (e.g. "8400 rpm / 9072 rpm")
     public var annotationText: String
+    /// Whether to display top annotation on this item
+    public var showAnnotation: Bool
+    /// Whether to display border around top annotation on this item
+    public var showAnnotationBorder: Bool
     /// Mapping of Dimension ID string to bottom numerical value on that specific bar (e.g. 25, 19)
     public var bottomValues: [String: Double]
     /// Mapping of Dimension ID string to bottom text string on that specific bar
@@ -26,6 +30,8 @@ public struct BenchmarkItem: Identifiable, Codable, Equatable, Sendable {
         customEndColorHex: String? = nil,
         values: [String: Double] = [:],
         annotationText: String = "",
+        showAnnotation: Bool = true,
+        showAnnotationBorder: Bool = true,
         bottomValues: [String: Double] = [:],
         bottomTexts: [String: String] = [:]
     ) {
@@ -37,12 +43,16 @@ public struct BenchmarkItem: Identifiable, Codable, Equatable, Sendable {
         self.customEndColorHex = customEndColorHex
         self.values = values
         self.annotationText = annotationText
+        self.showAnnotation = showAnnotation
+        self.showAnnotationBorder = showAnnotationBorder
         self.bottomValues = bottomValues
         self.bottomTexts = bottomTexts
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, title, subtitle, themePalette, customStartColorHex, customEndColorHex, values, annotationText, bottomValues, bottomTexts
+        case id, title, subtitle, themePalette, customStartColorHex, customEndColorHex, values
+        case annotationText, showAnnotation, showAnnotationBorder
+        case bottomValues, bottomTexts
     }
     
     public init(from decoder: Decoder) throws {
@@ -55,6 +65,8 @@ public struct BenchmarkItem: Identifiable, Codable, Equatable, Sendable {
         self.customEndColorHex = try c.decodeIfPresent(String.self, forKey: .customEndColorHex)
         self.values = try c.decodeIfPresent([String: Double].self, forKey: .values) ?? [:]
         self.annotationText = try c.decodeIfPresent(String.self, forKey: .annotationText) ?? ""
+        self.showAnnotation = try c.decodeIfPresent(Bool.self, forKey: .showAnnotation) ?? (!self.annotationText.isEmpty)
+        self.showAnnotationBorder = try c.decodeIfPresent(Bool.self, forKey: .showAnnotationBorder) ?? true
         self.bottomValues = try c.decodeIfPresent([String: Double].self, forKey: .bottomValues) ?? [:]
         self.bottomTexts = try c.decodeIfPresent([String: String].self, forKey: .bottomTexts) ?? [:]
     }
@@ -69,6 +81,8 @@ public struct BenchmarkItem: Identifiable, Codable, Equatable, Sendable {
         try c.encodeIfPresent(customEndColorHex, forKey: .customEndColorHex)
         try c.encode(values, forKey: .values)
         try c.encode(annotationText, forKey: .annotationText)
+        try c.encode(showAnnotation, forKey: .showAnnotation)
+        try c.encode(showAnnotationBorder, forKey: .showAnnotationBorder)
         try c.encode(bottomValues, forKey: .bottomValues)
         try c.encode(bottomTexts, forKey: .bottomTexts)
     }

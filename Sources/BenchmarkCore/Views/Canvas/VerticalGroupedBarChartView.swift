@@ -440,7 +440,8 @@ public struct VerticalGroupedBarChartView: View {
                                 .cornerRadius(3)
                         }
                         
-                        if showAnnotations && !item.annotationText.isEmpty {
+                        if showAnnotations && item.showAnnotation && !item.annotationText.isEmpty {
+                            let hasBorder = item.showAnnotationBorder && showAnnotationBorder
                             Text(item.annotationText)
                                 .font(FontManager.shared.font(
                                     family: fontFamily,
@@ -450,11 +451,11 @@ public struct VerticalGroupedBarChartView: View {
                                     isBoldMode: typography.isBoldMode
                                 ))
                                 .foregroundColor(isDarkGlass ? Color.white.opacity(0.85) : Color(hex: "#0F172A"))
-                                .padding(.horizontal, showAnnotationBorder ? 5 : 2)
-                                .padding(.vertical, showAnnotationBorder ? 1.5 : 0)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
                                 .background(
                                     Group {
-                                        if showAnnotationBorder {
+                                        if hasBorder {
                                             Capsule()
                                                 .fill(item.effectiveGlowColor.opacity(0.35))
                                                 .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 0.8))

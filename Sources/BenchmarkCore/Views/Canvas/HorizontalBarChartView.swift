@@ -52,7 +52,7 @@ public struct HorizontalBarChartView: View {
     }
     
     private var anyItemHasAnnotation: Bool {
-        showAnnotations && items.contains(where: { !$0.annotationText.isEmpty })
+        showAnnotations && items.contains(where: { $0.showAnnotation && !$0.annotationText.isEmpty })
     }
     
     public var body: some View {
@@ -225,16 +225,23 @@ public struct HorizontalBarChartView: View {
             let currentNumber = rawVal * min(max(numProgress, 0.0), 1.0)
             let formattedNumber = String(format: "%.\(dim.decimalPlaces)f", currentNumber)
             
-            // 固定數字寬度與軌道寬度公式
-            let numberWidth: CGFloat = 68
-            let trackWidth: CGFloat = max(20, colWidth - 12 - numberWidth)
+            // 動態數值寬度與軌道寬度（支援 5 位以上大數字與多指標，自適應縮放絕不截斷為 ...）
+            let maxValCount = items.map { item -> Int in
+                let val = item.value(for: dim.id)
+                return String(format: "%.\(dim.decimalPlaces)f", val).count
+            }.max() ?? 4
+            let estDigitsWidth = CGFloat(max(5, maxValCount)) * (CGFloat(typography.dataValueSize) * 0.72)
+            let estUnitWidth = CGFloat(dim.unit.count) * 8.0
+            let numberWidth: CGFloat = max(78, min(estDigitsWidth + estUnitWidth + 12, colWidth * 0.48))
+            let trackWidth: CGFloat = max(20, colWidth - 8 - numberWidth)
             // 比例上限平滑約束：長條圖精準在軌道內伸展，絕不爆出軌道擠壓右側數值文字
             let barWidth = min(max(trackWidth * currentRatio, 0), trackWidth)
             
             VStack(alignment: .leading, spacing: 3) {
-                // Top Annotation text (固定 18pt 槽位高度，支援自選外框，字級調整零位移)
+                // Top Annotation text (固定 18pt 槽位高度，支援自選外框，文字完全零位移)
                 if anyItemHasAnnotation {
-                    if !item.annotationText.isEmpty {
+                    if item.showAnnotation && !item.annotationText.isEmpty {
+                        let hasBorder = item.showAnnotationBorder && showAnnotationBorder
                         Text(item.annotationText)
                             .font(FontManager.shared.font(
                                 family: fontFamily,
@@ -244,18 +251,18 @@ public struct HorizontalBarChartView: View {
                                 isBoldMode: typography.isBoldMode
                             ))
                             .foregroundColor(isDarkGlass ? .white : .black)
-                            .padding(.horizontal, showAnnotationBorder ? 6 : 2)
-                            .padding(.vertical, showAnnotationBorder ? 1.5 : 0)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
                             .background(
                                 Group {
-                                    if showAnnotationBorder {
+                                    if hasBorder {
                                         Capsule()
                                             .fill(item.effectiveGlowColor.opacity(0.35))
                                             .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 0.8))
                                     }
                                 }
                             )
-                            .shadow(color: isDarkGlass ? .black.opacity(0.5) : .white.opacity(0.5), radius: showAnnotationBorder ? 0 : 2, x: 0, y: 1)
+                            .shadow(color: isDarkGlass ? .black.opacity(0.5) : .white.opacity(0.5), radius: hasBorder ? 0 : 2, x: 0, y: 1)
                             .lineLimit(1)
                             .frame(height: 18, alignment: .leading)
                     } else {
@@ -324,9 +331,9 @@ public struct HorizontalBarChartView: View {
                     }
                     .frame(width: trackWidth, height: 22, alignment: .leading)
                     
-                    // Value and Unit (固定槽位寬高，移除 numericText 動畫衝突，杜絕高頻更新抽動)
+                    // Value and Unit (固定槽位寬高，支援 5 位以上大數字防擠壓防省略微縮)
                     if showBarValues {
-                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 2) {
                             Text(formattedNumber)
                                 .font(FontManager.shared.font(
                                     family: fontFamily,
@@ -337,6 +344,8 @@ public struct HorizontalBarChartView: View {
                                 ))
                                 .foregroundColor(isDarkGlass ? .white : Color(hex: "#0F172A"))
                                 .shadow(color: isDarkGlass ? .black.opacity(0.3) : .clear, radius: 2, x: 0, y: 1)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.70)
                             
                             if !dim.unit.isEmpty {
                                 Text(dim.unit)
@@ -347,6 +356,8 @@ public struct HorizontalBarChartView: View {
                                         isBoldMode: typography.isBoldMode
                                     ))
                                     .foregroundColor(isDarkGlass ? Color(white: 0.65) : Color(hex: "#475569"))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.70)
                             }
                         }
                         .frame(width: numberWidth, height: 22, alignment: .leading)

@@ -187,15 +187,6 @@ public struct AppearanceSection: View {
                 Toggle(l10n("啟用細微亮邊框 (1px 漸層描邊)", "Enable 1px Gradient Highlight Border"), isOn: $container.showHighlightBorder)
                     .font(.system(size: 12))
                 
-                Toggle(l10n("顯示長條圖正上方附加標註文字", "Show Top Annotation Text"), isOn: $container.showTopAnnotations)
-                    .font(.system(size: 12))
-                
-                if container.showTopAnnotations {
-                    Toggle(l10n("頂部標註文字顯示外框", "Show Border on Annotations"), isOn: $container.showAnnotationBorder)
-                        .font(.system(size: 11))
-                        .padding(.leading, 12)
-                }
-                
                 // 5. Background Mode (Includes 綠幕 Green Screen)
                 VStack(alignment: .leading, spacing: 6) {
                     Text(l10n("底部背景模式", "Canvas Background Mode"))

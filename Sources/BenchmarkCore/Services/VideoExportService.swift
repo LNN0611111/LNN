@@ -496,6 +496,7 @@ public final class VideoExportService {
         let (hp, cp, rp, np) = calculateProgresses(for: time, project: project)
         let refSize = project.aspectRatio.referenceSize
         let scale = size.width / refSize.width
+        let isDark = (project.container.glassMode == .dark)
         
         return ZStack {
             CanvasContainerView(
@@ -513,6 +514,8 @@ public final class VideoExportService {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
         }
         .frame(width: size.width, height: size.height)
+        .preferredColorScheme(isDark ? .dark : .light)
+        .environment(\.colorScheme, isDark ? .dark : .light)
     }
     
     private func calculateProgresses(for time: Double, project: BenchmarkProject) -> (

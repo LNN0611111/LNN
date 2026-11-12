@@ -47,6 +47,7 @@ public struct SidebarView: View {
                 DataItemsSection(
                     items: $project.items,
                     dimensions: project.dimensions,
+                    chartType: project.chartType,
                     showAnnotationBorder: $project.container.showAnnotationBorder,
                     productColumnTitle: $project.container.productColumnTitle,
                     typography: $project.typography,

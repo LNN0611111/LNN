@@ -161,8 +161,12 @@ public struct CanvasContainerView: View {
                 
                 if isDark {
                     RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                        .fill(.ultraThinMaterial)
-                        .opacity(matOpacity)
+                        .fill(Color(hex: "#05070B").opacity(0.40 * (1.0 - trans))) // 基礎沉穩黑底，杜絕離屏渲染翻白
+                        .overlay(
+                            RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                                .fill(.ultraThinMaterial)
+                                .opacity(matOpacity)
+                        )
                         .overlay(
                             RoundedRectangle(cornerRadius: project.container.cornerRadius)
                                 .fill(Color.black.opacity(tintOpacity))
@@ -252,5 +256,6 @@ public struct CanvasContainerView: View {
         }
         .opacity(min(max(containerProgress, 0.0), 1.0))
         .offset(y: (1.0 - min(max(containerProgress, 0.0), 1.0)) * 12.0)
+        .environment(\.colorScheme, isDark ? .dark : .light)
     }
 }

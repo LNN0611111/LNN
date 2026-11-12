@@ -215,7 +215,7 @@ public struct SettingsModalView: View {
                         Toggle(l10n("在長條圖上顯示數值", "Show Numbers on Bars"), isOn: $project.verticalConfig.showBarValues)
                             .font(.system(size: 11, weight: .semibold))
                         
-                        if project.verticalConfig.showBarValues {
+                        if project.verticalConfig.showBarValues && project.chartType == .verticalGroupedBar {
                             Picker(l10n("數值呈現位置", "Value Display Position"), selection: $project.verticalConfig.valuePosition) {
                                 ForEach(VerticalValuePosition.allCases) { pos in
                                     Text(pos.rawValue).tag(pos)
