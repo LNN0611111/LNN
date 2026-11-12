@@ -379,7 +379,15 @@ public final class VideoExportService {
             let asset = AVURLAsset(url: URL(fileURLWithPath: path))
             let gen = AVAssetImageGenerator(asset: asset)
             gen.appliesPreferredTrackTransform = true
-            let targetSec = project.customVideoConfig.trimStartTime + time
+            gen.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)
+            gen.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: 600)
+            
+            let startT = max(0.0, project.customVideoConfig.trimStartTime)
+            let rawDuration = CMTimeGetSeconds(asset.duration)
+            let videoMax = (rawDuration.isNaN || rawDuration <= 0) ? 10.0 : rawDuration
+            let endT = (project.customVideoConfig.trimEndTime > startT) ? min(project.customVideoConfig.trimEndTime, videoMax) : videoMax
+            let effectiveSpan = max(0.1, endT - startT)
+            let targetSec = startT + time.truncatingRemainder(dividingBy: effectiveSpan)
             videoFrame = try? gen.copyCGImage(at: CMTime(seconds: targetSec, preferredTimescale: 600), actualTime: nil)
         }
         

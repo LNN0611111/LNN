@@ -49,34 +49,6 @@ public struct DimensionSection: View {
                 .background(Color.white.opacity(0.04))
                 .cornerRadius(8)
                 
-                // MARK: - 自訂指標文字顏色 (全域)
-                VStack(alignment: .leading, spacing: 6) {
-                    Toggle(l10n("自訂指標文字顏色", "Custom Dimension Color"), isOn: $container.useCustomDimensionColor)
-                        .font(.system(size: 10, weight: .bold))
-                    
-                    if container.useCustomDimensionColor {
-                        HStack(spacing: 8) {
-                            Text(l10n("全域指標顏色", "Global Color"))
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                            
-                            ColorPicker("", selection: Binding<Color>(
-                                get: { Color(hex: container.dimensionHeaderColorHex) },
-                                set: { container.dimensionHeaderColorHex = $0.toHex() }
-                            ))
-                            .labelsHidden()
-                            .frame(width: 24, height: 24)
-                            
-                            TextField("#HEX", text: $container.dimensionHeaderColorHex)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 10, design: .monospaced))
-                        }
-                    }
-                }
-                .padding(8)
-                .background(Color.white.opacity(0.04))
-                .cornerRadius(8)
-                
                 Divider().background(Color.white.opacity(0.1))
                 
                 ForEach($dimensions) { $dim in
@@ -171,28 +143,48 @@ public struct DimensionSection: View {
                                 }
                             }
                             
-                            // 獨立指標專屬顏色 (可選)
-                            HStack(spacing: 6) {
-                                Text(l10n("此指標專屬顏色 (選填)", "Specific Metric Color"))
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.secondary)
-                                
-                                ColorPicker("", selection: Binding<Color>(
-                                    get: { Color(hex: dim.customColorHex ?? container.dimensionHeaderColorHex) },
-                                    set: { dim.customColorHex = $0.toHex() }
+                            // MARK: - 自訂此單一指標文字顏色
+                            VStack(alignment: .leading, spacing: 4) {
+                                Toggle(l10n("自訂此指標文字顏色", "Custom Color for This Metric"), isOn: Binding<Bool>(
+                                    get: { dim.customColorHex != nil },
+                                    set: { isCustom in
+                                        if isCustom {
+                                            dim.customColorHex = "#9CA3AF"
+                                        } else {
+                                            dim.customColorHex = nil
+                                        }
+                                    }
                                 ))
-                                .labelsHidden()
-                                .frame(width: 22, height: 22)
+                                .font(.system(size: 10, weight: .semibold))
                                 
                                 if dim.customColorHex != nil {
-                                    Button(l10n("重置為預設", "Reset")) {
-                                        dim.customColorHex = nil
+                                    HStack(spacing: 8) {
+                                        ColorPicker("", selection: Binding<Color>(
+                                            get: { Color(hex: dim.customColorHex ?? "#9CA3AF") },
+                                            set: { dim.customColorHex = $0.toHex() }
+                                        ))
+                                        .labelsHidden()
+                                        .frame(width: 22, height: 22)
+                                        
+                                        TextField("#HEX", text: Binding<String>(
+                                            get: { dim.customColorHex ?? "#9CA3AF" },
+                                            set: { dim.customColorHex = $0 }
+                                        ))
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        
+                                        Button(l10n("重置為預設", "Reset")) {
+                                            dim.customColorHex = nil
+                                        }
+                                        .font(.system(size: 9))
+                                        .buttonStyle(.bordered)
                                     }
-                                    .font(.system(size: 9))
-                                    .buttonStyle(.bordered)
+                                    .padding(.leading, 6)
                                 }
                             }
-                            .padding(.top, 2)
+                            .padding(6)
+                            .background(Color.white.opacity(0.04))
+                            .cornerRadius(6)
                             
                             // 將顯示上限選項移到各項指標：讓用戶能選是否針對特定指標顯示
                             Toggle(

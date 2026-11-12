@@ -241,12 +241,14 @@ public struct AppearanceSection: View {
                                     .tint(Color(hex: "#60A5FA"))
                                     
                                     // 剪輯參數摘要
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: 6) {
                                         Text(l10n("起點: \(String(format: "%.1f", customVideoConfig.trimStartTime))s", "Start: \(String(format: "%.1f", customVideoConfig.trimStartTime))s"))
                                         Text("|")
                                         Text(customVideoConfig.trimEndTime > 0 ? l10n("終點: \(String(format: "%.1f", customVideoConfig.trimEndTime))s", "End: \(String(format: "%.1f", customVideoConfig.trimEndTime))s") : l10n("終點: 完整", "End: Full"))
                                         Text("|")
-                                        Text(customVideoConfig.contentMode == "fill" ? l10n("填滿", "Fill") : l10n("適應", "Fit"))
+                                        Text(customVideoConfig.cropAspectRatio == "original" ? l10n("原始比例", "Original") : customVideoConfig.cropAspectRatio)
+                                        Text("|")
+                                        Text(customVideoConfig.contentMode == "fill" ? l10n("填滿畫面", "Fill") : l10n("等比適應", "Fit"))
                                     }
                                     .font(.system(size: 9, design: .monospaced))
                                     .foregroundColor(.secondary)
@@ -297,6 +299,11 @@ public struct AppearanceSection: View {
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
             customMediaFilePath = url.path
+            let ext = url.pathExtension.lowercased()
+            if ["mp4", "mov", "m4v"].contains(ext) {
+                // 用戶自行匯入影片時，立即跳出跟自訂圖標時一樣的可視化視窗讓用戶裁切影片長度及比例
+                state.isShowingVideoTrimModal = true
+            }
         }
     }
 }

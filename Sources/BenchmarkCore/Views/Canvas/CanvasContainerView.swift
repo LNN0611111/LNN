@@ -85,10 +85,11 @@ public struct CanvasContainerView: View {
             
         case .customMedia:
             if isExportMode, let videoFrame = customExportVideoFrame {
-                let contentMode: ContentMode = (project.customVideoConfig.contentMode == "fit") ? .fit : .fill
-                Image(decorative: videoFrame, scale: 1.0)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
+                MediaFrameView(
+                    cgImage: videoFrame,
+                    cropAspectRatio: project.customVideoConfig.cropAspectRatio,
+                    contentMode: project.customVideoConfig.contentMode
+                )
             } else {
                 CustomMediaBackgroundView(
                     filePath: project.customMediaFilePath,

@@ -14,6 +14,27 @@ public final class VideoTrimState: ObservableObject {
     
     public init() {}
     
+    public func seekTo(_ seconds: Double) {
+        guard let p = player else { return }
+        let target = CMTime(seconds: seconds, preferredTimescale: 600)
+        p.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
+        self.currentTime = seconds
+    }
+    
+    public func togglePlay() {
+        guard let p = player else { return }
+        if isPlaying {
+            p.pause()
+            isPlaying = false
+        } else {
+            if currentTime >= endVal {
+                seekTo(startVal)
+            }
+            p.play()
+            isPlaying = true
+        }
+    }
+    
     public func stopAndClean() {
         if let p = player, let obs = timeObserver {
             p.removeTimeObserver(obs)
@@ -34,6 +55,15 @@ public struct VideoTrimCropModalView: View {
     
     @StateObject private var state = VideoTrimState()
     
+    // 預設比例清單
+    private let presetAspectRatios: [(id: String, name: String, desc: String)] = [
+        ("original", "原始比例", "保持影片拍攝比例"),
+        ("16:9", "16:9 寬螢幕", "YouTube / 電腦橫向標準"),
+        ("4:3", "4:3 標準", "iPad / 傳統螢幕比例"),
+        ("1:1", "1:1 正方", "社群方形發布格式"),
+        ("9:16", "9:16 直式", "Reels / TikTok 直式短影音")
+    ]
+    
     public init(
         videoURL: URL,
         config: Binding<CustomVideoConfig>,
@@ -50,16 +80,24 @@ public struct VideoTrimCropModalView: View {
     
     public var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // MARK: - Header
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(l10n("自訂背景影片可視化剪輯與比例", "Visual Video Trim & Crop"))
-                        .font(.system(size: 14, weight: .bold))
-                    Text(l10n("裁剪影片播放長度、設定畫面比例與超長接續播放模式", "Trim playback range, set aspect ratio, and configure extended playback"))
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                HStack(spacing: 8) {
+                    Image(systemName: "film.stack.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(hex: "#8B5CF6"))
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(l10n("自訂背景影片可視化剪輯與比例", "Visual Video Trim & Crop"))
+                            .font(.system(size: 14, weight: .bold))
+                        Text(l10n("裁剪播放長度、設定預設畫面比例，並決定是否填滿畫布", "Trim playback range, select preset aspect ratio, and decide fill mode"))
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
                 }
+                
                 Spacer()
+                
                 Button(action: {
                     state.stopAndClean()
                     onCancel()
@@ -76,32 +114,97 @@ public struct VideoTrimCropModalView: View {
             
             Divider()
             
-            // Player & Controls Body
+            // MARK: - Body Content
             ScrollView {
-                VStack(spacing: 18) {
-                    // 1. AVPlayer Video Preview Box
+                VStack(spacing: 16) {
+                    // 1. 可視化影片播放與裁切輔助框 (Video Player Preview Box with Visual Crop Overlay)
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color.black)
-                            .frame(height: 240)
                         
                         if let player = state.player {
-                            VideoPlayer(player: player)
-                                .frame(height: 240)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                            GeometryReader { geo in
+                                let w = geo.size.width
+                                let h = geo.size.height
+                                let isFill = (config.contentMode == "fill")
+                                let targetRatio = parseAspectRatioValue(config.cropAspectRatio)
+                                
+                                ZStack {
+                                    // 影片播放層
+                                    VideoPlayer(player: player)
+                                        .aspectRatio(contentMode: isFill ? .fill : .fit)
+                                        .frame(width: w, height: h)
+                                        .clipped()
+                                    
+                                    // 預設比例可視化裁切框與九宮格輔助線
+                                    if let ratio = targetRatio {
+                                        let containerRatio = w / max(1, h)
+                                        let boxW: CGFloat = (ratio > containerRatio) ? w * 0.92 : h * 0.92 * ratio
+                                        let boxH: CGFloat = (ratio > containerRatio) ? (w * 0.92) / ratio : h * 0.92
+                                        
+                                        // 半透明遮罩 (外部暗化，聚焦裁切區域)
+                                        Rectangle()
+                                            .fill(Color.black.opacity(0.45))
+                                            .mask(
+                                                Rectangle()
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 6)
+                                                            .frame(width: boxW, height: boxH)
+                                                            .blendMode(.destinationOut)
+                                                    )
+                                            )
+                                        
+                                        // 裁切框邊框與九宮格
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.white.opacity(0.9), lineWidth: 2)
+                                            .frame(width: boxW, height: boxH)
+                                            .overlay(
+                                                VStack(spacing: 0) {
+                                                    Spacer()
+                                                    Divider().background(Color.white.opacity(0.3))
+                                                    Spacer()
+                                                    Divider().background(Color.white.opacity(0.3))
+                                                    Spacer()
+                                                }
+                                                .overlay(
+                                                    HStack(spacing: 0) {
+                                                        Spacer()
+                                                        Divider().background(Color.white.opacity(0.3))
+                                                        Spacer()
+                                                        Divider().background(Color.white.opacity(0.3))
+                                                        Spacer()
+                                                    }
+                                                )
+                                            )
+                                            .overlay(
+                                                Text(config.cropAspectRatio)
+                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(.white)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(Color.purple.opacity(0.85))
+                                                    .cornerRadius(4)
+                                                    .padding(6),
+                                                alignment: .topTrailing
+                                            )
+                                    }
+                                }
+                                .frame(width: w, height: h)
+                            }
                         } else {
                             ProgressView()
-                                .frame(height: 240)
                         }
                     }
+                    .frame(height: 250)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
                     .overlay(
+                        // 底部播放控制浮動條
                         VStack {
                             Spacer()
-                            // Floating playback bar
                             HStack(spacing: 12) {
-                                Button(action: togglePlay) {
+                                Button(action: { state.togglePlay() }) {
                                     Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 14))
+                                        .font(.system(size: 13))
                                         .foregroundColor(.white)
                                 }
                                 .buttonStyle(.plain)
@@ -112,23 +215,22 @@ public struct VideoTrimCropModalView: View {
                                 
                                 Spacer()
                                 
-                                Text("總長: \(formatTime(state.videoTotalDuration))")
+                                Text(l10n("影片總長: \(formatTime(state.videoTotalDuration))", "Duration: \(formatTime(state.videoTotalDuration))"))
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(Color(white: 0.8))
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(Color.black.opacity(0.65))
+                            .background(Color.black.opacity(0.75))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .padding(8)
                         }
                     )
-                    .frame(height: 240)
                     
-                    // 2. Length Trimming Controls (長度裁剪)
+                    // 2. 影片播放長度裁剪 (Trim Range)
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text(l10n("影片播放長度裁剪 (Trim Range)", "Video Playback Trim Range"))
+                            Text(l10n("影片長度裁剪 (Trim Range)", "Video Playback Trim Range"))
                                 .font(.system(size: 12, weight: .bold))
                             Spacer()
                             let trimmedLen = max(0.1, state.endVal - state.startVal)
@@ -137,10 +239,10 @@ public struct VideoTrimCropModalView: View {
                                 .foregroundColor(Color(hex: "#60A5FA"))
                         }
                         
-                        // Start Slider
+                        // 開始時間
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
-                                Text(l10n("開始時間 (Start Time)", "Start Time"))
+                                Text(l10n("開始時間點 (Start Time)", "Start Time"))
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
                                 Spacer()
@@ -151,14 +253,14 @@ public struct VideoTrimCropModalView: View {
                                 if state.startVal >= state.endVal {
                                     state.endVal = min(state.videoTotalDuration, state.startVal + 0.5)
                                 }
-                                seekTo(state.startVal)
+                                state.seekTo(state.startVal)
                             }
                         }
                         
-                        // End Slider
+                        // 結束時間
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
-                                Text(l10n("結束時間 (End Time)", "End Time"))
+                                Text(l10n("結束時間點 (End Time)", "End Time"))
                                     .font(.system(size: 10))
                                     .foregroundColor(.secondary)
                                 Spacer()
@@ -166,29 +268,31 @@ public struct VideoTrimCropModalView: View {
                                     .font(.system(size: 11, design: .monospaced))
                             }
                             Slider(value: $state.endVal, in: min(state.videoTotalDuration, state.startVal + 0.5)...max(0.5, state.videoTotalDuration), step: 0.1) { _ in
-                                seekTo(state.endVal)
+                                state.seekTo(state.endVal)
                             }
                         }
                         
-                        // Quick Action Buttons
+                        // 快速設定按鈕
                         HStack(spacing: 8) {
-                            Button(l10n("設起點為當前播放點", "Set Start = Current")) {
+                            Button(l10n("設起點為當前點", "Set Start = Now")) {
                                 state.startVal = state.currentTime
-                                if state.startVal >= state.endVal { state.endVal = min(state.videoTotalDuration, state.startVal + 0.5) }
+                                if state.startVal >= state.endVal {
+                                    state.endVal = min(state.videoTotalDuration, state.startVal + 0.5)
+                                }
                             }
                             .buttonStyle(.bordered)
                             .font(.system(size: 10))
                             
-                            Button(l10n("設終點為當前播放點", "Set End = Current")) {
+                            Button(l10n("設終點為當前點", "Set End = Now")) {
                                 state.endVal = max(state.startVal + 0.5, state.currentTime)
                             }
                             .buttonStyle(.bordered)
                             .font(.system(size: 10))
                             
-                            Button(l10n("重置全長", "Reset Full")) {
+                            Button(l10n("重置為完整長度", "Reset Full")) {
                                 state.startVal = 0.0
                                 state.endVal = state.videoTotalDuration
-                                seekTo(0.0)
+                                state.seekTo(0.0)
                             }
                             .buttonStyle(.bordered)
                             .font(.system(size: 10))
@@ -198,37 +302,32 @@ public struct VideoTrimCropModalView: View {
                     .background(Color.white.opacity(0.04))
                     .cornerRadius(8)
                     
-                    // 3. Aspect Ratio & Content Mode (比例與裁切模式)
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(l10n("影片比例與填滿模式", "Aspect Ratio & Fit Mode"))
+                    // 3. 預設比例選擇 (提供預設比例：16:9, 4:3, 1:1, 9:16 等)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(l10n("設定畫面比例 (預設比例)", "Preset Aspect Ratio"))
                             .font(.system(size: 12, weight: .bold))
                         
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(l10n("裁切比例", "Aspect Ratio"))
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                Picker("", selection: $config.cropAspectRatio) {
-                                    Text("原始比例").tag("original")
-                                    Text("16:9 (橫片)").tag("16:9")
-                                    Text("9:16 (直片)").tag("9:16")
-                                    Text("4:3 (平板)").tag("4:3")
-                                    Text("1:1 (正方)").tag("1:1")
+                        HStack(spacing: 6) {
+                            ForEach(presetAspectRatios, id: \.id) { item in
+                                let isSelected = (config.cropAspectRatio == item.id)
+                                Button(action: {
+                                    config.cropAspectRatio = item.id
+                                }) {
+                                    VStack(spacing: 2) {
+                                        Text(item.name)
+                                            .font(.system(size: 11, weight: isSelected ? .bold : .medium))
+                                            .foregroundColor(isSelected ? .white : Color(white: 0.7))
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(isSelected ? Color(hex: "#7C3AED") : Color.white.opacity(0.06))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(isSelected ? Color(hex: "#A855F7") : Color.white.opacity(0.12), lineWidth: 1)
+                                    )
                                 }
-                                .labelsHidden()
-                                .frame(width: 140)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(l10n("畫面呈現", "Content Mode"))
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.secondary)
-                                Picker("", selection: $config.contentMode) {
-                                    Text("滿版填滿 (裁切黑邊)").tag("fill")
-                                    Text("完整適應 (等比留邊)").tag("fit")
-                                }
-                                .labelsHidden()
-                                .frame(width: 160)
+                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -236,25 +335,40 @@ public struct VideoTrimCropModalView: View {
                     .background(Color.white.opacity(0.04))
                     .cornerRadius(8)
                     
-                    // 4. Extended Playback Option (超長接續播放)
+                    // 4. 決定是否填滿畫面 (Fill vs Fit)
                     VStack(alignment: .leading, spacing: 8) {
+                        Text(l10n("畫面呈現模式 (決定是否填滿畫面)", "Fill Mode Decision"))
+                            .font(.system(size: 12, weight: .bold))
+                        
+                        Picker("", selection: $config.contentMode) {
+                            Text(l10n("填滿畫面 (滿版裁切黑邊)", "Fill Canvas (Crop excess borders)")).tag("fill")
+                            Text(l10n("等比適應 (完整呈現保留留白)", "Fit Content (Keep full media with borders)")).tag("fit")
+                        }
+                        .pickerStyle(.segmented)
+                        
+                        Text(config.contentMode == "fill" ?
+                             l10n("✦ 填滿畫面：影片等比例放大至滿版填滿畫布，多餘邊界將自動裁切，畫面無黑邊。", "Fill: Video expands to cover the canvas completely without letterboxing.") :
+                             l10n("✦ 等比適應：完整保留全片畫面內容不被裁切，未填滿區域以純黑底色呈現。", "Fit: Entire video is shown inside canvas with letterboxing/pillarboxing."))
+                            .font(.system(size: 9))
+                            .foregroundColor(Color(white: 0.6))
+                    }
+                    .padding(12)
+                    .background(Color.white.opacity(0.04))
+                    .cornerRadius(8)
+                    
+                    // 5. 超長播放選項 (若影片長於動畫，接續播放)
+                    VStack(alignment: .leading, spacing: 6) {
                         Toggle(
-                            l10n("若影片長於動畫，背景繼續播放直到影片結束（數據圖表維持完成狀態）", "If video is longer than animation, continue video playback until video ends while chart stays completed"),
+                            l10n("若影片長於動畫，背景繼續播放直到影片結束（數據圖表維持結束態）", "Continue playing background video until end if longer than chart"),
                             isOn: $config.extendPlaybackUntilVideoEnds
                         )
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 11, weight: .semibold))
                         
                         let trimmedLen = max(0.1, state.endVal - state.startVal)
-                        HStack {
-                            Text(l10n("圖表動畫時長：\(String(format: "%.1f", chartDuration))s | 剪輯影片時長：\(String(format: "%.1f", trimmedLen))s", "Chart anim: \(String(format: "%.1f", chartDuration))s | Video: \(String(format: "%.1f", trimmedLen))s"))
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            if trimmedLen > chartDuration && config.extendPlaybackUntilVideoEnds {
-                                Text(l10n("✦ 將額外播放 \(String(format: "%.1f", trimmedLen - chartDuration)) 秒", "✦ Plays +\(String(format: "%.1f", trimmedLen - chartDuration))s extra"))
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(Color(hex: "#10B981"))
-                            }
+                        if trimmedLen > chartDuration && config.extendPlaybackUntilVideoEnds {
+                            Text(l10n("✦ 影片剪輯長度 (\(String(format: "%.1f", trimmedLen))s) 超過圖表動畫時長 (\(String(format: "%.1f", chartDuration))s)，動畫完成後背景將持續播放 \(String(format: "%.1f", trimmedLen - chartDuration)) 秒。", "✦ Video (\(String(format: "%.1f", trimmedLen))s) exceeds chart (\(String(format: "%.1f", chartDuration))s). Background continues +\(String(format: "%.1f", trimmedLen - chartDuration))s."))
+                                .font(.system(size: 9))
+                                .foregroundColor(Color(hex: "#10B981"))
                         }
                     }
                     .padding(12)
@@ -267,7 +381,7 @@ public struct VideoTrimCropModalView: View {
             
             Divider()
             
-            // Footer Action Buttons
+            // MARK: - Footer Actions
             HStack {
                 Button(l10n("取消", "Cancel")) {
                     state.stopAndClean()
@@ -279,8 +393,8 @@ public struct VideoTrimCropModalView: View {
                 Spacer()
                 
                 Button(action: saveAndApply) {
-                    Label(l10n("儲存並套用剪輯", "Apply Trim & Crop"), systemImage: "checkmark.circle.fill")
-                        .frame(minWidth: 130)
+                    Label(l10n("套用並完成", "Apply & Save"), systemImage: "checkmark.circle.fill")
+                        .frame(minWidth: 120)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color(hex: "#7C3AED"))
@@ -289,7 +403,7 @@ public struct VideoTrimCropModalView: View {
             .padding(.vertical, 14)
             .background(Color.white.opacity(0.04))
         }
-        .frame(width: 580, height: 600)
+        .frame(width: 600, height: 620)
         .background(Color(white: 0.13))
         .onAppear {
             setupPlayer()
@@ -319,36 +433,17 @@ public struct VideoTrimCropModalView: View {
                 
                 let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
                 state.timeObserver = p.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak state] time in
-                    guard let state = state else { return }
-                    state.currentTime = CMTimeGetSeconds(time)
-                    if state.currentTime >= state.endVal {
-                        seekTo(state.startVal)
+                    Task { @MainActor in
+                        guard let state = state else { return }
+                        state.currentTime = CMTimeGetSeconds(time)
+                        if state.currentTime >= state.endVal {
+                            state.seekTo(state.startVal)
+                        }
                     }
                 }
-                seekTo(state.startVal)
+                state.seekTo(state.startVal)
             }
         }
-    }
-    
-    private func togglePlay() {
-        guard let p = state.player else { return }
-        if state.isPlaying {
-            p.pause()
-            state.isPlaying = false
-        } else {
-            if state.currentTime >= state.endVal {
-                seekTo(state.startVal)
-            }
-            p.play()
-            state.isPlaying = true
-        }
-    }
-    
-    private func seekTo(_ seconds: Double) {
-        guard let p = state.player else { return }
-        let target = CMTime(seconds: seconds, preferredTimescale: 600)
-        p.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
-        state.currentTime = seconds
     }
     
     private func saveAndApply() {
