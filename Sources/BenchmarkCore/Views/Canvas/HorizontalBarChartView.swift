@@ -15,6 +15,7 @@ public struct HorizontalBarChartView: View {
     public var showDimensionMaxValue: Bool
     public var productColumnTitle: String
     public var container: ContainerConfig
+    public var showBarValues: Bool
     
     public init(
         items: [BenchmarkItem],
@@ -30,7 +31,8 @@ public struct HorizontalBarChartView: View {
         typography: TypographyConfig = TypographyConfig(),
         showDimensionMaxValue: Bool = true,
         productColumnTitle: String = "產品 / 規格",
-        container: ContainerConfig = ContainerConfig()
+        container: ContainerConfig = ContainerConfig(),
+        showBarValues: Bool = true
     ) {
         self.items = items
         self.dimensions = dimensions
@@ -46,6 +48,7 @@ public struct HorizontalBarChartView: View {
         self.showDimensionMaxValue = showDimensionMaxValue
         self.productColumnTitle = productColumnTitle
         self.container = container
+        self.showBarValues = showBarValues
     }
     
     private var anyItemHasAnnotation: Bool {
@@ -322,30 +325,32 @@ public struct HorizontalBarChartView: View {
                     .frame(width: trackWidth, height: 22, alignment: .leading)
                     
                     // Value and Unit (固定槽位寬高，移除 numericText 動畫衝突，杜絕高頻更新抽動)
-                    HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(formattedNumber)
-                            .font(FontManager.shared.font(
-                                family: fontFamily,
-                                size: CGFloat(typography.dataValueSize),
-                                weight: .heavy,
-                                design: .rounded,
-                                isBoldMode: typography.isBoldMode
-                            ))
-                            .foregroundColor(isDarkGlass ? .white : Color(hex: "#0F172A"))
-                            .shadow(color: isDarkGlass ? .black.opacity(0.3) : .clear, radius: 2, x: 0, y: 1)
-                        
-                        if !dim.unit.isEmpty {
-                            Text(dim.unit)
+                    if showBarValues {
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            Text(formattedNumber)
                                 .font(FontManager.shared.font(
                                     family: fontFamily,
-                                    size: max(9, CGFloat(typography.dataValueSize) - 4),
-                                    weight: .semibold,
+                                    size: CGFloat(typography.dataValueSize),
+                                    weight: .heavy,
+                                    design: .rounded,
                                     isBoldMode: typography.isBoldMode
                                 ))
-                                .foregroundColor(isDarkGlass ? Color(white: 0.65) : Color(hex: "#475569"))
+                                .foregroundColor(isDarkGlass ? .white : Color(hex: "#0F172A"))
+                                .shadow(color: isDarkGlass ? .black.opacity(0.3) : .clear, radius: 2, x: 0, y: 1)
+                            
+                            if !dim.unit.isEmpty {
+                                Text(dim.unit)
+                                    .font(FontManager.shared.font(
+                                        family: fontFamily,
+                                        size: max(9, CGFloat(typography.dataValueSize) - 4),
+                                        weight: .semibold,
+                                        isBoldMode: typography.isBoldMode
+                                    ))
+                                    .foregroundColor(isDarkGlass ? Color(white: 0.65) : Color(hex: "#475569"))
+                            }
                         }
+                        .frame(width: numberWidth, height: 22, alignment: .leading)
                     }
-                    .frame(width: numberWidth, height: 22, alignment: .leading)
                 }
             }
             .frame(width: colWidth, alignment: .leading)

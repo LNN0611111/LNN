@@ -212,14 +212,37 @@ public struct ExportModalView: View {
                             }
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(l10n("結尾定格展示時間", "Hold Duration"))
-                                    .font(.system(size: 12, weight: .bold))
-                                Picker("", selection: $exportConfig.holdDuration) {
-                                    Text(l10n("1.0 秒", "1.0 s")).tag(1.0)
-                                    Text(l10n("1.5 秒", "1.5 s")).tag(1.5)
-                                    Text(l10n("2.5 秒", "2.5 s")).tag(2.5)
+                                HStack {
+                                    Text(l10n("結尾定格展示時間", "Hold Duration"))
+                                        .font(.system(size: 12, weight: .bold))
+                                    Spacer()
+                                    TextField("", value: $exportConfig.holdDuration, format: .number.precision(.fractionLength(1...2)))
+                                        .textFieldStyle(.roundedBorder)
+                                        .frame(width: 52)
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .multilineTextAlignment(.trailing)
+                                    Text(l10n("秒", "s"))
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
                                 }
-                                .labelsHidden()
+                                
+                                HStack(spacing: 4) {
+                                    ForEach([0.5, 1.0, 2.0, 3.0, 5.0], id: \.self) { sec in
+                                        let isSelected = abs(exportConfig.holdDuration - sec) < 0.05
+                                        Button(action: {
+                                            exportConfig.holdDuration = sec
+                                        }) {
+                                            Text(sec == 2.0 ? l10n("2.0s (預設)", "2.0s (Def)") : String(format: "%.1fs", sec))
+                                                .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 3)
+                                                .background(isSelected ? Color(hex: "#7C3AED") : Color.white.opacity(0.06))
+                                                .foregroundColor(isSelected ? .white : Color(white: 0.7))
+                                                .cornerRadius(4)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
                             }
                         }
                         
@@ -253,6 +276,9 @@ public struct ExportModalView: View {
         .background(Color(white: 0.12))
         .onAppear {
             validateFormatAndCodec(format: exportConfig.format)
+            if exportConfig.holdDuration <= 0 {
+                exportConfig.holdDuration = project.animationConfig.holdDuration > 0 ? project.animationConfig.holdDuration : 2.0
+            }
         }
     }
     

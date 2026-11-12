@@ -1,5 +1,7 @@
 import SwiftUI
 import AVFoundation
+import CoreVideo
+import VideoToolbox
 import AppKit
 
 @MainActor
@@ -11,22 +13,66 @@ public final class VideoTrimState: ObservableObject {
     @Published public var startVal: Double = 0.0
     @Published public var endVal: Double = 0.0
     
-    private var asset: AVURLAsset?
-    private var generator: AVAssetImageGenerator?
-    private var timer: Timer?
+    private var player: AVPlayer?
+    private var playerItem: AVPlayerItem?
+    private var videoOutput: AVPlayerItemVideoOutput?
+    private var timeObserver: Any?
+    private var isSeeking: Bool = false
     
     public init() {}
     
     public func load(url: URL, config: CustomVideoConfig) {
-        let asset = AVURLAsset(url: url)
-        self.asset = asset
+        stopAndClean()
         
-        let gen = AVAssetImageGenerator(asset: asset)
-        gen.appliesPreferredTrackTransform = true
-        gen.maximumSize = CGSize(width: 960, height: 540)
-        gen.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)
-        gen.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: 600)
-        self.generator = gen
+        let asset = AVURLAsset(url: url)
+        let item = AVPlayerItem(asset: asset)
+        self.playerItem = item
+        
+        let attrs: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
+        ]
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: attrs)
+        item.add(output)
+        self.videoOutput = output
+        
+        let p = AVPlayer(playerItem: item)
+        p.isMuted = true
+        self.player = p
+        self.isSeeking = false
+        
+        Task {
+            if let tracks = try? await asset.loadTracks(withMediaType: .video), let track = tracks.first {
+                let transform = (try? await track.load(.preferredTransform)) ?? .identity
+                if transform != .identity {
+                    let comp = try? await AVVideoComposition.videoComposition(withPropertiesOf: asset)
+                    await MainActor.run {
+                        if self.playerItem == item {
+                            item.videoComposition = comp
+                        }
+                    }
+                }
+            }
+        }
+        
+        let initialStart = max(0.0, config.trimStartTime)
+        self.startVal = initialStart
+        
+        // 初始非同步海報幀快速獲取
+        Task.detached(priority: .userInitiated) {
+            let gen = AVAssetImageGenerator(asset: asset)
+            gen.appliesPreferredTrackTransform = true
+            gen.maximumSize = CGSize(width: 960, height: 540)
+            gen.requestedTimeToleranceBefore = CMTime(seconds: 0.1, preferredTimescale: 600)
+            gen.requestedTimeToleranceAfter = CMTime(seconds: 0.1, preferredTimescale: 600)
+            let cmTime = CMTime(seconds: initialStart, preferredTimescale: 600)
+            if let poster = try? gen.copyCGImage(at: cmTime, actualTime: nil) {
+                await MainActor.run {
+                    if self.currentFrame == nil {
+                        self.currentFrame = poster
+                    }
+                }
+            }
+        }
         
         Task {
             let duration = (try? await asset.load(.duration)) ?? .zero
@@ -35,28 +81,42 @@ public final class VideoTrimState: ObservableObject {
             
             await MainActor.run {
                 self.videoTotalDuration = safeTotal
-                self.startVal = max(0.0, config.trimStartTime)
                 if config.trimEndTime > self.startVal && config.trimEndTime <= self.videoTotalDuration {
                     self.endVal = config.trimEndTime
                 } else {
                     self.endVal = self.videoTotalDuration
                 }
                 self.currentTime = self.startVal
-                self.updateFrame(at: self.startVal)
+                self.seekTo(self.startVal)
             }
         }
     }
     
     public func seekTo(_ seconds: Double) {
+        guard let p = player else { return }
         self.currentTime = min(max(0, seconds), videoTotalDuration)
-        updateFrame(at: self.currentTime)
+        let cmTime = CMTime(seconds: self.currentTime, preferredTimescale: 600)
+        
+        p.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            guard finished, let self = self else { return }
+            Task { @MainActor in
+                self.captureFrame(at: cmTime)
+            }
+        }
+        
+        // 立即嘗試提取當前幀
+        captureFrame(at: cmTime)
     }
     
-    public func updateFrame(at seconds: Double) {
-        guard let gen = generator else { return }
-        let cmTime = CMTime(seconds: seconds, preferredTimescale: 600)
-        if let cgImg = try? gen.copyCGImage(at: cmTime, actualTime: nil) {
-            self.currentFrame = cgImg
+    private func captureFrame(at time: CMTime) {
+        guard let output = videoOutput else { return }
+        if output.hasNewPixelBuffer(forItemTime: time),
+           let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
+            var cgImg: CGImage?
+            VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &cgImg)
+            if let img = cgImg {
+                self.currentFrame = img
+            }
         }
     }
     
@@ -69,39 +129,62 @@ public final class VideoTrimState: ObservableObject {
     }
     
     public func startPlay() {
+        guard let p = player else { return }
         isPlaying = true
         if currentTime >= endVal {
-            currentTime = startVal
+            seekTo(startVal)
         }
-        timer?.invalidate()
-        let interval: Double = 1.0 / 30.0
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self, self.isPlaying else { return }
-                self.currentTime += interval
-                if self.currentTime >= self.endVal {
-                    self.currentTime = self.startVal
+        
+        if timeObserver == nil {
+            let interval = CMTime(seconds: 0.033, preferredTimescale: 600)
+            timeObserver = p.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+                Task { @MainActor [weak self] in
+                    guard let self = self, self.isPlaying else { return }
+                    let currentSec = CMTimeGetSeconds(time)
+                    self.currentTime = currentSec
+                    
+                    if self.endVal > self.startVal && currentSec >= self.endVal && !self.isSeeking {
+                        self.isSeeking = true
+                        p.seek(to: CMTime(seconds: self.startVal, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+                            Task { @MainActor [weak self] in
+                                guard let self = self else { return }
+                                self.isSeeking = false
+                                if self.isPlaying {
+                                    self.player?.play()
+                                }
+                            }
+                        }
+                    }
+                    
+                    self.captureFrame(at: time)
                 }
-                self.updateFrame(at: self.currentTime)
             }
         }
+        p.play()
     }
     
     public func stopPlay() {
         isPlaying = false
-        timer?.invalidate()
-        timer = nil
+        player?.pause()
     }
     
     public func stopAndClean() {
         stopPlay()
-        generator = nil
-        asset = nil
+        if let p = player, let obs = timeObserver {
+            p.removeTimeObserver(obs)
+            timeObserver = nil
+        }
+        player = nil
+        playerItem = nil
+        videoOutput = nil
         currentFrame = nil
     }
     
     deinit {
-        timer?.invalidate()
+        if let p = player, let obs = timeObserver {
+            p.removeTimeObserver(obs)
+        }
+        player?.pause()
     }
 }
 
@@ -176,7 +259,7 @@ public struct VideoTrimCropModalView: View {
             // MARK: - Body Content
             ScrollView {
                 VStack(spacing: 16) {
-                    // 1. 可視化影片預覽視窗 (純 SwiftUI 解碼渲染，保證絕不崩潰)
+                    // 1. 可視化影片預覽視窗 (VideoToolbox 硬體加速解碼)
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color.black)

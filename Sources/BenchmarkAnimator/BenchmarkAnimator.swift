@@ -49,9 +49,9 @@ struct BenchmarkAnimatorApp: App {
     }
     
     var body: some Scene {
-        WindowGroup("BenchmarkAnimator") {
+        WindowGroup("Visualized Benchmark") {
             ContentView()
-                .navigationTitle("BenchmarkAnimator")
+                .navigationTitle("Visualized Benchmark")
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)

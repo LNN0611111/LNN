@@ -12,6 +12,8 @@ public struct DataItemsSection: View {
     @Binding public var showAnnotationBorder: Bool
     @Binding public var productColumnTitle: String
     @Binding public var typography: TypographyConfig
+    @Binding public var showBarValues: Bool
+    @Binding public var valuePosition: VerticalValuePosition
     
     @StateObject private var state = DataItemsSectionState()
     
@@ -20,13 +22,17 @@ public struct DataItemsSection: View {
         dimensions: [BenchmarkDimension],
         showAnnotationBorder: Binding<Bool> = .constant(true),
         productColumnTitle: Binding<String> = .constant("產品 / 規格"),
-        typography: Binding<TypographyConfig> = .constant(TypographyConfig())
+        typography: Binding<TypographyConfig> = .constant(TypographyConfig()),
+        showBarValues: Binding<Bool> = .constant(true),
+        valuePosition: Binding<VerticalValuePosition> = .constant(.followBarTop)
     ) {
         self._items = items
         self.dimensions = dimensions
         self._showAnnotationBorder = showAnnotationBorder
         self._productColumnTitle = productColumnTitle
         self._typography = typography
+        self._showBarValues = showBarValues
+        self._valuePosition = valuePosition
     }
     
     public var body: some View {
@@ -35,13 +41,32 @@ public struct DataItemsSection: View {
             systemImage: "list.bullet.rectangle"
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                // 2. 讓用戶能夠修改「產品 / 規格」這行字
+                // 1. 讓用戶能夠修改「產品 / 規格」這行字
                 VStack(alignment: .leading, spacing: 4) {
                     Text(l10n("產品 / 規格 欄位表頭標題", "Product Column Title"))
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.secondary)
                     TextField(l10n("例：產品 / 規格", "e.g. Product / Specs"), text: $productColumnTitle)
                         .textFieldStyle(.roundedBorder)
+                }
+                .padding(8)
+                .background(Color.white.opacity(0.04))
+                .cornerRadius(6)
+                
+                // 2. 在長條圖顯示數值文字開關與位置 (移入產品分項)
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(l10n("在長條圖上顯示數值文字", "Show Numbers on Bars"), isOn: $showBarValues)
+                        .font(.system(size: 11, weight: .semibold))
+                    
+                    if showBarValues {
+                        Picker(l10n("數值呈現位置", "Value Display Position"), selection: $valuePosition) {
+                            ForEach(VerticalValuePosition.allCases) { pos in
+                                Text(pos.rawValue).tag(pos)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .font(.system(size: 10))
+                    }
                 }
                 .padding(8)
                 .background(Color.white.opacity(0.04))

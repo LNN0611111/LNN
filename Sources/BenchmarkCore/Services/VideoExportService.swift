@@ -61,7 +61,7 @@ public final class VideoExportService {
         let itemsCount = project.items.count
         let lastItemStart = 0.2 + Double(max(0, itemsCount - 1)) * project.animationConfig.staggeredDelay
         let animDuration = project.animationConfig.duration
-        let holdDuration = max(project.animationConfig.holdDuration, exportConfig.holdDuration)
+        let holdDuration = max(0.0, exportConfig.holdDuration)
         let animationEndTime = lastItemStart + animDuration
         var totalDuration = animationEndTime + holdDuration
         
@@ -96,6 +96,8 @@ public final class VideoExportService {
             }
         }
         
+        let isAnimatedBackground = isCustomVideoBackground || (project.backgroundMode == .animatedPattern)
+        
         let totalFrames = max(1, Int(ceil(totalDuration * Double(fps))))
         
         // MARK: - Handle Single PNG Snapshot
@@ -120,11 +122,11 @@ public final class VideoExportService {
                 let time = Double(f) / Double(fps)
                 let cgImage: CGImage
                 
-                if exportConfig.enableFastOptimization && !isCustomVideoBackground, time >= animationEndTime, let cached = lastSettledImage {
+                if exportConfig.enableFastOptimization && !isAnimatedBackground, time >= animationEndTime, let cached = lastSettledImage {
                     cgImage = cached
                 } else {
                     cgImage = try renderFrame(at: time, project: project, size: resolution)
-                    if time >= animationEndTime && !isCustomVideoBackground {
+                    if time >= animationEndTime && !isAnimatedBackground {
                         lastSettledImage = cgImage
                     }
                 }
@@ -304,12 +306,14 @@ public final class VideoExportService {
                 currentVideoFrame = try? gen.copyCGImage(at: cmT, actualTime: nil)
             }
             
-            // Fast Optimization: If settled during hold duration, reuse final frame! (自訂動態影片背景除外)
-            if exportConfig.enableFastOptimization && !isCustomVideoBackground, time >= animationEndTime, let cachedImage = lastSettledCGImage {
-                if let pb = pixelBuffer(from: cachedImage, width: width, height: height, pool: adaptor.pixelBufferPool) {
-                    let ok = adaptor.append(pb, withPresentationTime: presentationTime)
-                    if !ok {
-                        throw writer.error ?? ExportError.writerInitializationFailed("寫入快取幀失敗 (Frame \(f))")
+            // Fast Optimization: If settled during hold duration, reuse final frame! (自訂動態影片或動態平鋪背景除外)
+            if exportConfig.enableFastOptimization && !isAnimatedBackground, time >= animationEndTime, let cachedImage = lastSettledCGImage {
+                try autoreleasepool {
+                    if let pb = pixelBuffer(from: cachedImage, width: width, height: height, pool: adaptor.pixelBufferPool) {
+                        let ok = adaptor.append(pb, withPresentationTime: presentationTime)
+                        if !ok {
+                            throw writer.error ?? ExportError.writerInitializationFailed("寫入快取幀失敗 (Frame \(f))")
+                        }
                     }
                 }
             } else {
@@ -325,7 +329,7 @@ public final class VideoExportService {
                         throw ExportError.renderFailed(f)
                     }
                     
-                    if time >= animationEndTime && lastSettledCGImage == nil && !isCustomVideoBackground {
+                    if time >= animationEndTime && lastSettledCGImage == nil && !isAnimatedBackground {
                         lastSettledCGImage = cgImage
                     }
                     
@@ -432,7 +436,8 @@ public final class VideoExportService {
                 rowProgresses: rp,
                 numberProgresses: np,
                 isExportMode: true,
-                customExportVideoFrame: videoFrame
+                customExportVideoFrame: videoFrame,
+                currentTime: time
             )
             .frame(width: refSize.width, height: refSize.height)
             .scaleEffect(scale, anchor: .topLeading)

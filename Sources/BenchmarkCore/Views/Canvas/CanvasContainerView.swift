@@ -8,6 +8,7 @@ public struct CanvasContainerView: View {
     public var numberProgresses: [UUID: Double]
     public var isExportMode: Bool // If true, do not show checkerboard if background is transparent
     public var customExportVideoFrame: CGImage?
+    public var currentTime: Double
     
     public init(
         project: BenchmarkProject,
@@ -16,7 +17,8 @@ public struct CanvasContainerView: View {
         rowProgresses: [UUID: Double] = [:],
         numberProgresses: [UUID: Double] = [:],
         isExportMode: Bool = false,
-        customExportVideoFrame: CGImage? = nil
+        customExportVideoFrame: CGImage? = nil,
+        currentTime: Double = 0.0
     ) {
         self.project = project
         self.headerProgress = headerProgress
@@ -25,6 +27,7 @@ public struct CanvasContainerView: View {
         self.numberProgresses = numberProgresses
         self.isExportMode = isExportMode
         self.customExportVideoFrame = customExportVideoFrame
+        self.currentTime = currentTime
     }
     
     // Primary accent color taken from the first item or purple default
@@ -118,6 +121,13 @@ public struct CanvasContainerView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+            
+        case .animatedPattern:
+            AnimatedPatternBackgroundView(
+                config: project.patternConfig,
+                isExportMode: isExportMode,
+                currentTime: currentTime
+            )
         }
     }
     
@@ -127,38 +137,58 @@ public struct CanvasContainerView: View {
         let isDark = project.container.glassMode == .dark
         let fontFamily = project.typography.fontFamily
         let refSize = project.aspectRatio.referenceSize
+        let isGreenScreen = (project.backgroundMode == .greenScreen)
         
         ZStack(alignment: .center) {
-            // 毛玻璃效果與背景層
-            if isDark {
+            // 毛玻璃效果與背景層 (綠幕模式下強制採用 100% 不透明純色底色，徹底杜絕綠光穿透與後期摳像穿孔)
+            if isGreenScreen {
+                if isDark {
+                    RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                        .fill(Color(hex: "#0F172A")) // 100% 不透明沉穩曜黑/深岩灰底色
+                        .overlay(
+                            RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                                .fill(Color(hex: "#1E293B").opacity(0.35))
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                        .fill(Color(hex: "#FFFFFF")) // 100% 不透明純淨亮白底色
+                }
+            } else if isDark {
                 RoundedRectangle(cornerRadius: project.container.cornerRadius)
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                            .fill(Color.black.opacity(0.48))
+                            .fill(Color.black.opacity(project.container.glassOpacity))
                     )
             } else {
                 RoundedRectangle(cornerRadius: project.container.cornerRadius)
                     .fill(.thinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                            .fill(Color.white.opacity(0.75))
+                            .fill(Color.white.opacity(min(0.85, max(0.15, project.container.glassOpacity * 1.8))))
                     )
             }
             
-            // 細微亮邊框 (1px 漸層白色/黑色的半透明描邊)
+            // 細微亮邊框 (1px 漸層描邊，綠幕模式採用不透綠純淨漸層)
             if project.container.showHighlightBorder {
                 RoundedRectangle(cornerRadius: project.container.cornerRadius)
                     .stroke(
                         LinearGradient(
-                            colors: isDark ? [
+                            colors: isGreenScreen ? (isDark ? [
+                                Color.white.opacity(0.45),
+                                Color(hex: "#334155"),
+                                Color(hex: "#1E293B")
+                            ] : [
+                                Color(hex: "#CBD5E1"),
+                                Color(hex: "#94A3B8")
+                            ]) : (isDark ? [
                                 Color.white.opacity(0.4),
                                 Color.white.opacity(0.12),
                                 Color.white.opacity(0.04)
                             ] : [
                                 Color.white.opacity(0.9),
                                 Color.black.opacity(0.15)
-                            ],
+                            ]),
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -201,7 +231,8 @@ public struct CanvasContainerView: View {
                         typography: project.typography,
                         showDimensionMaxValue: project.container.showDimensionMaxValue,
                         productColumnTitle: project.container.productColumnTitle,
-                        container: project.container
+                        container: project.container,
+                        showBarValues: project.verticalConfig.showBarValues
                     )
                 }
                 

@@ -103,7 +103,8 @@ public struct CanvasPreviewView: View {
                         containerProgress: containerProgress,
                         rowProgresses: rowProgresses,
                         numberProgresses: numberProgresses,
-                        isExportMode: false
+                        isExportMode: false,
+                        currentTime: currentTime
                     )
                     .frame(width: refSize.width, height: refSize.height)
                     .scaleEffect(scale, anchor: .topLeading)

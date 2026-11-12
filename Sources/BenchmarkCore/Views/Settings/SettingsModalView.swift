@@ -393,7 +393,7 @@ public struct SettingsModalView: View {
                 Text(l10n("本機暫存快取管理", "Local Cache & Storage Management"))
                     .font(.system(size: 13, weight: .bold))
                 
-                Text(l10n("軟體在進行即時預覽、自訂背景影片解碼與 4K/2K 影片匯出時，會在 macOS 暫存目錄建立影像中介檔與硬體編碼緩衝。", "BenchmarkAnimator generates temporary frame buffers and hardware encoding caches during preview and video rendering."))
+                Text(l10n("軟體在進行即時預覽、自訂背景影片解碼與 4K/2K 影片匯出時，會在 macOS 暫存目錄建立影像中介檔與硬體編碼緩衝。", "Visualized Benchmark generates temporary frame buffers and hardware encoding caches during preview and video rendering."))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }

@@ -70,6 +70,7 @@ public enum BackgroundMode: String, CaseIterable, Identifiable, Codable, Sendabl
     case greenScreen = "純綠幕背景 (#00FF00 Chroma Key)"
     case gradientDark = "深色科技漸層"
     case gradientLight = "簡約明亮白底"
+    case animatedPattern = "文字/圖片平移"
     case customMedia = "自訂背景（圖檔/影片）"
     
     public var id: String { rawValue }
@@ -129,6 +130,144 @@ public struct CustomVideoConfig: Codable, Equatable, Sendable {
         self.cropAspectRatio = cropAspectRatio
         self.contentMode = contentMode
         self.extendPlaybackUntilVideoEnds = extendPlaybackUntilVideoEnds
+    }
+}
+
+public enum PatternScrollDirection: String, CaseIterable, Identifiable, Codable, Sendable {
+    case diagonalUpLeft = "斜向左上 (Diagonal Up-Left)"
+    case diagonalDownRight = "斜向右下 (Diagonal Down-Right)"
+    case diagonalUpRight = "斜向右上 (Diagonal Up-Right)"
+    case diagonalDownLeft = "斜向左下 (Diagonal Down-Left)"
+    case horizontalLeft = "水平向左 (Left)"
+    case horizontalRight = "水平向右 (Right)"
+    case verticalUp = "垂直向上 (Up)"
+    case verticalDown = "垂直向下 (Down)"
+    
+    public var id: String { rawValue }
+    
+    public var vector: (dx: Double, dy: Double) {
+        switch self {
+        case .diagonalUpLeft: return (-1.0, -1.0)
+        case .diagonalDownRight: return (1.0, 1.0)
+        case .diagonalUpRight: return (1.0, -1.0)
+        case .diagonalDownLeft: return (-1.0, 1.0)
+        case .horizontalLeft: return (-1.0, 0.0)
+        case .horizontalRight: return (1.0, 0.0)
+        case .verticalUp: return (0.0, -1.0)
+        case .verticalDown: return (0.0, 1.0)
+        }
+    }
+}
+
+public enum PatternContentMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case iconAndText = "圖標 + 文字"
+    case textOnly = "僅文字"
+    case iconOnly = "僅圖標"
+    
+    public var id: String { rawValue }
+}
+
+public struct PatternPreset: Sendable {
+    public let text: String
+    public let symbol: String
+    public let textColorHex: String
+    public let iconColorHex: String
+    public let bgColorHex: String
+    public let direction: PatternScrollDirection
+    public let angle: Double
+    
+    public init(text: String, symbol: String, textColorHex: String, iconColorHex: String, bgColorHex: String, direction: PatternScrollDirection, angle: Double) {
+        self.text = text
+        self.symbol = symbol
+        self.textColorHex = textColorHex
+        self.iconColorHex = iconColorHex
+        self.bgColorHex = bgColorHex
+        self.direction = direction
+        self.angle = angle
+    }
+}
+
+public struct AnimatedPatternConfig: Codable, Equatable, Sendable {
+    public static let randomPresets: [PatternPreset] = [
+        PatternPreset(text: "TECH REVIEW", symbol: "cpu", textColorHex: "#38BDF8", iconColorHex: "#38BDF8", bgColorHex: "#0F172A", direction: .diagonalUpLeft, angle: -12.0),
+        PatternPreset(text: "極客解熱實測", symbol: "flame.fill", textColorHex: "#F97316", iconColorHex: "#EF4444", bgColorHex: "#18181B", direction: .diagonalDownRight, angle: -15.0),
+        PatternPreset(text: "BENCHMARK LAB", symbol: "bolt.fill", textColorHex: "#FACC15", iconColorHex: "#FACC15", bgColorHex: "#121214", direction: .horizontalLeft, angle: 0.0),
+        PatternPreset(text: "硬體性能對比", symbol: "chart.bar.xaxis", textColorHex: "#A855F7", iconColorHex: "#C084FC", bgColorHex: "#1E1B4B", direction: .diagonalUpRight, angle: 10.0),
+        PatternPreset(text: "BENCHMARK REVIEW", symbol: "cpu", textColorHex: "#38BDF8", iconColorHex: "#38BDF8", bgColorHex: "#0F172A", direction: .diagonalUpLeft, angle: -12.0),
+        PatternPreset(text: "FLAGSHIP TEST", symbol: "crown.fill", textColorHex: "#FBBF24", iconColorHex: "#FBBF24", bgColorHex: "#18181B", direction: .horizontalRight, angle: -8.0),
+        PatternPreset(text: "GAME FPS LAB", symbol: "gamecontroller.fill", textColorHex: "#34D399", iconColorHex: "#10B981", bgColorHex: "#064E3B", direction: .diagonalDownLeft, angle: -14.0),
+        PatternPreset(text: "極速跑分中心", symbol: "speedometer", textColorHex: "#EC4899", iconColorHex: "#F43F5E", bgColorHex: "#1F1235", direction: .diagonalUpLeft, angle: -12.0)
+    ]
+    
+    public static func randomPreset() -> PatternPreset {
+        randomPresets.randomElement() ?? randomPresets[0]
+    }
+    
+    public mutating func applyRandomPreset() {
+        let preset = Self.randomPreset()
+        self.text = preset.text
+        self.sfSymbol = preset.symbol
+        self.customIconBase64 = nil
+        self.textColorHex = preset.textColorHex
+        self.iconColorHex = preset.iconColorHex
+        self.backgroundColorHex = preset.bgColorHex
+        self.scrollDirection = preset.direction
+        self.rotationAngle = preset.angle
+    }
+    
+    public var contentMode: PatternContentMode
+    public var text: String
+    public var sfSymbol: String
+    public var customIconBase64: String?
+    public var backgroundColorHex: String
+    public var textColorHex: String
+    public var iconColorHex: String
+    public var fontSize: Double
+    public var isBold: Bool
+    public var itemSpacing: Double
+    public var rowSpacing: Double
+    public var rotationAngle: Double
+    public var staggeredOffset: Bool
+    public var scrollDirection: PatternScrollDirection
+    public var speed: Double
+    public var opacity: Double
+    
+    public init(
+        contentMode: PatternContentMode = .iconAndText,
+        useRandomPreset: Bool = true,
+        text: String? = nil,
+        sfSymbol: String? = nil,
+        customIconBase64: String? = nil,
+        backgroundColorHex: String? = nil,
+        textColorHex: String? = nil,
+        iconColorHex: String? = nil,
+        fontSize: Double = 24.0,
+        isBold: Bool = true,
+        itemSpacing: Double = 48.0,
+        rowSpacing: Double = 36.0,
+        rotationAngle: Double? = nil,
+        staggeredOffset: Bool = true,
+        scrollDirection: PatternScrollDirection? = nil,
+        speed: Double = 35.0,
+        opacity: Double = 0.85
+    ) {
+        let preset = useRandomPreset ? Self.randomPreset() : Self.randomPresets[0]
+        self.contentMode = contentMode
+        self.text = text ?? preset.text
+        self.sfSymbol = sfSymbol ?? preset.symbol
+        self.customIconBase64 = customIconBase64
+        self.backgroundColorHex = backgroundColorHex ?? preset.bgColorHex
+        self.textColorHex = textColorHex ?? preset.textColorHex
+        self.iconColorHex = iconColorHex ?? preset.iconColorHex
+        self.fontSize = fontSize
+        self.isBold = isBold
+        self.itemSpacing = itemSpacing
+        self.rowSpacing = rowSpacing
+        self.rotationAngle = rotationAngle ?? preset.angle
+        self.staggeredOffset = staggeredOffset
+        self.scrollDirection = scrollDirection ?? preset.direction
+        self.speed = speed
+        self.opacity = opacity
     }
 }
 
@@ -233,6 +372,9 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
     public var useCustomDimensionColor: Bool
     public var dimensionHeaderColorHex: String
     
+    // 5. 毛玻璃遮光度 (越低越透光，預設 0.28)
+    public var glassOpacity: Double
+    
     public init(
         glassMode: GlassMaterialMode = .dark,
         cornerRadius: Double = 22.0,
@@ -242,7 +384,8 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
         showDimensionMaxValue: Bool = true,
         productColumnTitle: String = "產品 / 規格",
         useCustomDimensionColor: Bool = false,
-        dimensionHeaderColorHex: String = "#9CA3AF"
+        dimensionHeaderColorHex: String = "#9CA3AF",
+        glassOpacity: Double = 0.28
     ) {
         self.glassMode = glassMode
         self.cornerRadius = cornerRadius
@@ -253,12 +396,14 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
         self.productColumnTitle = productColumnTitle
         self.useCustomDimensionColor = useCustomDimensionColor
         self.dimensionHeaderColorHex = dimensionHeaderColorHex
+        self.glassOpacity = glassOpacity
     }
     
     enum CodingKeys: String, CodingKey {
         case glassMode, cornerRadius, showHighlightBorder, showTopAnnotations, showAnnotationBorder
         case showDimensionMaxValue, productColumnTitle
         case useCustomDimensionColor, dimensionHeaderColorHex
+        case glassOpacity
     }
     
     public init(from decoder: Decoder) throws {
@@ -272,6 +417,7 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
         self.productColumnTitle = try c.decodeIfPresent(String.self, forKey: .productColumnTitle) ?? "產品 / 規格"
         self.useCustomDimensionColor = try c.decodeIfPresent(Bool.self, forKey: .useCustomDimensionColor) ?? false
         self.dimensionHeaderColorHex = try c.decodeIfPresent(String.self, forKey: .dimensionHeaderColorHex) ?? "#9CA3AF"
+        self.glassOpacity = (try? c.decodeIfPresent(Double.self, forKey: .glassOpacity)) ?? 0.28
     }
 }
 
@@ -289,7 +435,7 @@ public struct AnimationConfig: Codable, Equatable, Sendable {
         springDamping: Double = 0.75,
         springResponse: Double = 0.8,
         staggeredDelay: Double = 0.08,
-        holdDuration: Double = 1.5
+        holdDuration: Double = 2.0
     ) {
         self.style = style
         self.duration = duration
@@ -373,7 +519,7 @@ public struct ExportConfig: Codable, Equatable, Sendable {
         resolution: ExportResolution = .p1080,
         fps: Int = 60,
         bitrateMbps: Double = 25.0,
-        holdDuration: Double = 1.5,
+        holdDuration: Double = 2.0,
         enableFastOptimization: Bool = true
     ) {
         self.format = format
@@ -534,6 +680,7 @@ public struct BenchmarkProject: Codable, Equatable, Sendable {
     public var language: AppLanguage
     public var verticalConfig: VerticalChartConfig
     public var customVideoConfig: CustomVideoConfig
+    public var patternConfig: AnimatedPatternConfig
     
     public init(
         version: String = "1.0",
@@ -550,7 +697,8 @@ public struct BenchmarkProject: Codable, Equatable, Sendable {
         typography: TypographyConfig = TypographyConfig(),
         language: AppLanguage = .traditionalChinese,
         verticalConfig: VerticalChartConfig = VerticalChartConfig(),
-        customVideoConfig: CustomVideoConfig = CustomVideoConfig()
+        customVideoConfig: CustomVideoConfig = CustomVideoConfig(),
+        patternConfig: AnimatedPatternConfig = AnimatedPatternConfig()
     ) {
         self.version = version
         self.header = header
@@ -567,10 +715,11 @@ public struct BenchmarkProject: Codable, Equatable, Sendable {
         self.language = language
         self.verticalConfig = verticalConfig
         self.customVideoConfig = customVideoConfig
+        self.patternConfig = patternConfig
     }
     
     enum CodingKeys: String, CodingKey {
-        case version, header, dimensions, items, chartType, backgroundMode, aspectRatio, customMediaFilePath, container, animationConfig, export, typography, language, verticalConfig, customVideoConfig
+        case version, header, dimensions, items, chartType, backgroundMode, aspectRatio, customMediaFilePath, container, animationConfig, export, typography, language, verticalConfig, customVideoConfig, patternConfig
     }
     
     public init(from decoder: Decoder) throws {
@@ -590,5 +739,6 @@ public struct BenchmarkProject: Codable, Equatable, Sendable {
         self.language = (try? container.decodeIfPresent(AppLanguage.self, forKey: .language)) ?? .traditionalChinese
         self.verticalConfig = (try? container.decodeIfPresent(VerticalChartConfig.self, forKey: .verticalConfig)) ?? VerticalChartConfig()
         self.customVideoConfig = (try? container.decodeIfPresent(CustomVideoConfig.self, forKey: .customVideoConfig)) ?? CustomVideoConfig()
+        self.patternConfig = (try? container.decodeIfPresent(AnimatedPatternConfig.self, forKey: .patternConfig)) ?? AnimatedPatternConfig()
     }
 }

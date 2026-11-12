@@ -49,7 +49,9 @@ public struct SidebarView: View {
                     dimensions: project.dimensions,
                     showAnnotationBorder: $project.container.showAnnotationBorder,
                     productColumnTitle: $project.container.productColumnTitle,
-                    typography: $project.typography
+                    typography: $project.typography,
+                    showBarValues: $project.verticalConfig.showBarValues,
+                    valuePosition: $project.verticalConfig.valuePosition
                 )
                 
                 // 4. Appearance, glass style, and background (with green screen and aspect ratio)
@@ -61,6 +63,7 @@ public struct SidebarView: View {
                     container: $project.container,
                     verticalConfig: $project.verticalConfig,
                     customVideoConfig: $project.customVideoConfig,
+                    patternConfig: $project.patternConfig,
                     items: project.items,
                     animationDuration: project.animationConfig.duration
                 )

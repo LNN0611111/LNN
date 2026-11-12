@@ -71,6 +71,7 @@ public final class CacheService: Sendable {
         name.hasPrefix("benchmark_") ||
         name.contains("BenchmarkAnimator") ||
         (name.hasSuffix(".mov") && name.contains("test")) ||
+        (name.hasSuffix(".mp4") && name.contains("test")) ||
         (name.hasSuffix(".png") && name.contains("test"))
     }
 }

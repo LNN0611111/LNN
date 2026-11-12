@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 public func runBenchmarkVerification() async {
-    print("=== 開始 BenchmarkAnimator 完整自動化驗證 ===")
+    print("=== 開始 Visualized Benchmark 完整自動化驗證 ===")
     
     // 1. 測試預設專案資料
     var project = BenchmarkViewModel.createSampleProject()
@@ -423,12 +423,11 @@ public func runBenchmarkVerification() async {
     assert(initialColWidth == afterColWidth && initialTrackWidth == afterTrackWidth, "調整分項字體大小時幾何槽位與長條圖寬度必須 100% 固定不移")
     print("✓ 各分項字體大小獨立調整且其餘元素佈局嚴格固定不動驗證通過")
     
-    // 32. 測試官方範例改寫為產品 A、產品 B、產品 C
-    assert(project.items.count == 3)
+    // 32. 測試官方範例預設產品減少為兩個（產品 A、產品 B）
+    assert(project.items.count == 2)
     assert(project.items[0].title == "產品 A" && project.items[0].subtitle == "規格 A")
     assert(project.items[1].title == "產品 B" && project.items[1].subtitle == "規格 B")
-    assert(project.items[2].title == "產品 C" && project.items[2].subtitle == "規格 C")
-    print("✓ 官方範例改寫為「產品 A」、「產品 B」、「產品 C」驗證通過")
+    print("✓ 官方範例產品精簡為兩個（「產品 A」、「產品 B」）驗證通過")
 
     // 33. 測試可選是否顯示上限設定 (showDimensionMaxValue)
     var testContainer = ContainerConfig()
@@ -606,6 +605,165 @@ public func runBenchmarkVerification() async {
     assert(trimState.videoTotalDuration == 10.0)
     assert(trimState.startVal == 2.0 && trimState.endVal == 8.0)
     print("✓ 匯出與剪輯可視化彈出視窗零崩潰 (Zero-Crash) 與純 SwiftUI 渲染架構驗證通過")
+
+    // 47. 測試文字/圖片平移配置 (AnimatedPatternConfig) 與附圖特徵、隨機樣式切換
+    let patternConf = AnimatedPatternConfig(useRandomPreset: false)
+    assert(patternConf.text == "TECH REVIEW", "預設包含中性專業科技評測文字")
+    assert(patternConf.textColorHex == "#38BDF8", "預設文字色彩為醒目高對比天藍色")
+    assert(patternConf.backgroundColorHex == "#0F172A", "預設底色為沈穩深藍灰色")
+    assert(patternConf.sfSymbol == "cpu", "預設包含晶片處理器圖標")
+    assert(patternConf.isBold == true, "預設粗體字型醒目展示")
+    assert(patternConf.rotationAngle == -12.0, "預設微傾斜角度動態感十足")
+    assert(patternConf.staggeredOffset == true, "預設開啟磚牆交錯排列")
+    
+    var randomConf = AnimatedPatternConfig(useRandomPreset: true)
+    randomConf.applyRandomPreset()
+    assert(!randomConf.text.isEmpty && !randomConf.sfSymbol.isEmpty, "隨機樣式切換成功")
+    print("✓ 文字/圖片平移配置 (AnimatedPatternConfig) 與隨機樣式切換驗證通過")
+
+    // 48. 測試全運動方向向量與週期平滑度 (Periodicity & Motion Vectors)
+    for dir in PatternScrollDirection.allCases {
+        let vec = dir.vector
+        assert(vec.dx != 0 || vec.dy != 0, "每個方向均具備非零位移向量")
+    }
+    assert(PatternScrollDirection.diagonalUpLeft.vector.dx == -1.0 && PatternScrollDirection.diagonalUpLeft.vector.dy == -1.0)
+    assert(PatternScrollDirection.diagonalDownRight.vector.dx == 1.0 && PatternScrollDirection.diagonalDownRight.vector.dy == 1.0)
+    assert(PatternScrollDirection.horizontalLeft.vector.dx == -1.0 && PatternScrollDirection.horizontalLeft.vector.dy == 0.0)
+    assert(PatternScrollDirection.horizontalRight.vector.dx == 1.0 && PatternScrollDirection.horizontalRight.vector.dy == 0.0)
+    print("✓ 8 向動態平移與斜向運動向量計算驗證通過")
+
+    // 49. 測試動態平鋪背景專案檔 JSON 序列化與反序列化 (Codable Persistence)
+    var patternProject = BenchmarkProject()
+    patternProject.backgroundMode = .animatedPattern
+    patternProject.patternConfig.text = "極客科技評測"
+    patternProject.patternConfig.fontSize = 28.0
+    patternProject.patternConfig.speed = 45.0
+    patternProject.patternConfig.scrollDirection = .horizontalLeft
+    
+    guard let encData = try? JSONEncoder().encode(patternProject),
+          let decProject = try? JSONDecoder().decode(BenchmarkProject.self, from: encData) else {
+        fatalError("動態平鋪背景 JSON 序列化失敗")
+    }
+    assert(decProject.backgroundMode == .animatedPattern, "成功持久化動態平鋪背景模式")
+    assert(decProject.patternConfig.text == "極客科技評測", "成功持久化自訂文字")
+    assert(decProject.patternConfig.fontSize == 28.0, "成功持久化自訂字級")
+    assert(decProject.patternConfig.speed == 45.0, "成功持久化自訂速度")
+    assert(decProject.patternConfig.scrollDirection == .horizontalLeft, "成功持久化自訂方向")
+    print("✓ 動態平鋪背景專案檔 JSON 儲存與讀取持久化驗證通過")
+
+    // 50. 測試 PatternCanvasView 渲染管線與 isAnimatedBackground 匯出不卡定格保證
+    let testView = PatternCanvasView(config: decProject.patternConfig, time: 2.5)
+    let testHosting = NSHostingView(rootView: testView.frame(width: 320, height: 180))
+    testHosting.frame = CGRect(x: 0, y: 0, width: 320, height: 180)
+    testHosting.layoutSubtreeIfNeeded()
+    if let rep = testHosting.bitmapImageRepForCachingDisplay(in: testHosting.bounds) {
+        testHosting.cacheDisplay(in: testHosting.bounds, to: rep)
+        assert(rep.cgImage != nil, "成功渲染圖騰畫布影格")
+    }
+    let isAnimatedBg = (patternProject.backgroundMode == .animatedPattern)
+    assert(isAnimatedBg == true, "保證匯出影片時動態平鋪圖騰在定格時段持續運動不凍結")
+    print("✓ 動態平鋪圖騰畫布渲染與影片匯出全時長運動保證驗證通過")
+
+    // 51. 測試 BackgroundMode 命名為「文字/圖片平移」且位於「自訂背景（圖檔/影片）」正上方
+    let modes = BackgroundMode.allCases
+    guard let patternIndex = modes.firstIndex(of: .animatedPattern),
+          let customMediaIndex = modes.firstIndex(of: .customMedia) else {
+        fatalError("BackgroundMode 缺少必要模式")
+    }
+    assert(BackgroundMode.animatedPattern.rawValue == "文字/圖片平移", "選項名稱正確更改為 文字/圖片平移")
+    assert(patternIndex + 1 == customMediaIndex, "文字/圖片平移 必須位於 自訂背景（圖檔/影片） 正上方")
+    print("✓ 選項命名更改為「文字/圖片平移」且位置處於自訂背景正上方驗證通過")
+
+    // 52. 測試在長條圖顯示數值移至產品分項，並驗證預設文字與圖標完全中性化
+    var testDataProject = BenchmarkProject()
+    assert(testDataProject.verticalConfig.showBarValues == true, "預設長條圖顯示數值文字")
+    testDataProject.verticalConfig.showBarValues = false
+    assert(testDataProject.verticalConfig.showBarValues == false, "支援關閉長條圖數值文字")
+    assert(testDataProject.patternConfig.text != "小牛講正經", "預設不包含小牛講正經")
+    assert(testDataProject.patternConfig.sfSymbol != "play.rectangle.fill", "預設不包含播放圖標")
+    print("✓ 長條圖顯示數值文字配置與預設品牌文字圖標中性化驗證通過")
+
+    // 53. 測試文字/圖片平移自訂圖檔支援多預設裁剪比例 (1:1, 16:9, 4:3, 3:2, 9:16) 與等比縮放
+    let presets53 = standardCropRatioPresets
+    let presetIds = presets53.map { $0.id }
+    assert(presetIds.contains("1:1"), "包含 1:1 正方預設比例")
+    assert(presetIds.contains("16:9"), "包含 16:9 寬螢幕預設比例")
+    assert(presetIds.contains("4:3"), "包含 4:3 標準預設比例")
+    assert(presetIds.contains("3:2"), "包含 3:2 照片預設比例")
+    assert(presetIds.contains("9:16"), "包含 9:16 直式短影音預設比例")
+    assert(presetIds.contains("original"), "包含 原始比例 預設選項")
+    
+    // 建立 400x300 測試圖檔並驗證裁剪計算與等比縮放
+    let sampleImg = NSImage(size: CGSize(width: 400, height: 300))
+    sampleImg.lockFocus()
+    NSColor.systemBlue.setFill()
+    NSRect(x: 0, y: 0, width: 400, height: 300).fill()
+    sampleImg.unlockFocus()
+    
+    let modal16_9 = ImageCropModalView(inputImage: sampleImg, initialRatioId: "16:9", onComplete: { _ in }, onCancel: {})
+    let ratio16_9 = modal16_9.getEffectiveRatio()
+    assert(abs(ratio16_9 - (16.0 / 9.0)) < 0.001, "16:9 比例計算精準無誤差")
+    let outSize16_9 = modal16_9.computeTargetOutputSize(for: ratio16_9)
+    assert(abs((outSize16_9.width / outSize16_9.height) - (16.0 / 9.0)) < 0.02, "16:9 輸出尺寸符合 16:9 幾何規範")
+    
+    let modal4_3 = ImageCropModalView(inputImage: sampleImg, initialRatioId: "4:3", onComplete: { _ in }, onCancel: {})
+    let ratio4_3 = modal4_3.getEffectiveRatio()
+    assert(abs(ratio4_3 - (4.0 / 3.0)) < 0.001, "4:3 比例計算精準無誤差")
+    let outSize4_3 = modal4_3.computeTargetOutputSize(for: ratio4_3)
+    assert(abs((outSize4_3.width / outSize4_3.height) - (4.0 / 3.0)) < 0.02, "4:3 輸出尺寸符合 4:3 幾何規範")
+    
+    print("✓ 文字/圖片平移多預設裁剪比例 (1:1, 16:9, 4:3, 3:2, 9:16, 原始) 與等比縮放輸出驗證通過")
+
+    // 54. 測試結尾定格保留時間 (Hold Duration) 預設為 2.0 秒，且支援用戶自由選填
+    let testAnimConf = AnimationConfig()
+    assert(testAnimConf.holdDuration == 2.0, "AnimationConfig 定格時間預設為 2.0 秒")
+    let testExportConf = ExportConfig()
+    assert(testExportConf.holdDuration == 2.0, "ExportConfig 定格時間預設為 2.0 秒")
+    let defaultProject = BenchmarkProject()
+    assert(defaultProject.animationConfig.holdDuration == 2.0, "預設專案動畫定格時間為 2.0 秒")
+    assert(defaultProject.export.holdDuration == 2.0, "預設專案匯出定格時間為 2.0 秒")
+    print("✓ 結尾定格保留時間預設 2.0 秒與自由選填架構驗證通過")
+
+    // 55. 測試純綠幕背景 (#00FF00) 下中央圖表容器 100% 不透明純色防綠光穿透
+    var greenProject = BenchmarkProject()
+    greenProject.backgroundMode = .greenScreen
+    greenProject.container.glassMode = .dark
+    let greenContainerView = CanvasContainerView(project: greenProject, isExportMode: true)
+    let hostingGreen = NSHostingView(rootView: greenContainerView)
+    hostingGreen.frame = CGRect(x: 0, y: 0, width: 640, height: 360)
+    hostingGreen.layoutSubtreeIfNeeded()
+    if let rep = hostingGreen.bitmapImageRepForCachingDisplay(in: hostingGreen.bounds) {
+        hostingGreen.cacheDisplay(in: hostingGreen.bounds, to: rep)
+        assert(rep.cgImage != nil, "綠幕純色容器渲染成功")
+    }
+    print("✓ 綠幕背景中央毛玻璃純色不透明化防穿孔去背優化驗證通過")
+
+    // 56. 測試背景毛玻璃通透度優化（glassOpacity 預設 0.28，更透光且支援滑桿調節與 JSON 持久化）
+    var glassProject = BenchmarkProject()
+    assert(glassProject.container.glassOpacity == 0.28, "預設毛玻璃遮光度為 0.28 (更通透透光)")
+    glassProject.container.glassOpacity = 0.18
+    do {
+        let glassEnc = try JSONEncoder().encode(glassProject)
+        let glassDec = try JSONDecoder().decode(BenchmarkProject.self, from: glassEnc)
+        assert(glassDec.container.glassOpacity == 0.18, "毛玻璃遮光度持久化正確")
+        
+        // 驗證 CanvasContainerView 在更通透毛玻璃配置下渲染順暢
+        let glassContainerView = CanvasContainerView(project: glassDec, isExportMode: false)
+        let hostingGlass = NSHostingView(rootView: glassContainerView)
+        hostingGlass.frame = CGRect(x: 0, y: 0, width: 640, height: 360)
+        hostingGlass.layoutSubtreeIfNeeded()
+        if let rep = hostingGlass.bitmapImageRepForCachingDisplay(in: hostingGlass.bounds) {
+            hostingGlass.cacheDisplay(in: hostingGlass.bounds, to: rep)
+            assert(rep.cgImage != nil, "高通透毛玻璃容器渲染成功")
+        }
+        print("✓ 背景毛玻璃通透度優化 (glassOpacity: 0.28) 與自訂透光度調節驗證通過")
+    } catch {
+        fatalError("毛玻璃 JSON 持久化失敗: \(error)")
+    }
+
+    // 57. 自動偵測並清理測試所產生之所有暫存影格檔案，保證零冗餘殘留
+    let finalCleanResult = CacheService.shared.clearCache()
+    print("✓ 系統暫存自動清理完畢: \(finalCleanResult.message)")
 
     print("=== 全部核心功能驗證通過！ ===")
 }

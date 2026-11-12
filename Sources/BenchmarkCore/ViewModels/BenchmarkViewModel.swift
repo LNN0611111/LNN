@@ -281,17 +281,6 @@ public final class BenchmarkViewModel: ObservableObject {
             annotationText: "7800 rpm / 8400 rpm"
         )
         
-        let item3 = BenchmarkItem(
-            title: "產品 C",
-            subtitle: "規格 C",
-            themePalette: .cyan,
-            values: [
-                dimPower.id.uuidString: 58.0,
-                dimNoise.id.uuidString: 41.0
-            ],
-            annotationText: "5600 rpm / 5900 rpm"
-        )
-        
         return BenchmarkProject(
             version: "1.0",
             header: HeaderConfig(
@@ -300,7 +289,7 @@ public final class BenchmarkViewModel: ObservableObject {
                 iconSymbol: "cpu.fill"
             ),
             dimensions: [dimPower, dimNoise],
-            items: [item1, item2, item3],
+            items: [item1, item2],
             chartType: .horizontalBar,
             backgroundMode: .transparent,
             container: ContainerConfig(
@@ -322,7 +311,7 @@ public final class BenchmarkViewModel: ObservableObject {
                 resolution: .p1080,
                 fps: 60,
                 bitrateMbps: 25.0,
-                holdDuration: 1.5,
+                holdDuration: 2.0,
                 enableFastOptimization: true
             )
         )

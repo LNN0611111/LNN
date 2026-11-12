@@ -108,18 +108,45 @@ public struct AnimationSection: View {
                     Slider(value: $animation.staggeredDelay, in: 0.0...0.3, step: 0.02)
                 }
                 
-                // Hold Duration Slider
-                VStack(alignment: .leading, spacing: 2) {
+                // Hold Duration (選填時間，預設 2.0 秒)
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(l10n("動畫結尾定格保留時間 (Hold)", "Hold Duration"))
                             .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text(String(format: l10n("%.2f 秒", "%.2f s"), animation.holdDuration))
+                        
+                        TextField("", value: $animation.holdDuration, format: .number.precision(.fractionLength(1...2)))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 58)
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .multilineTextAlignment(.trailing)
+                        
+                        Text(l10n("秒", "s"))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(Color(hex: "#10B981"))
                     }
-                    Slider(value: $animation.holdDuration, in: 0.5...5.0, step: 0.5)
+                    
+                    Slider(value: $animation.holdDuration, in: 0.0...10.0, step: 0.25)
+                    
+                    // 常用預設時間快捷按鈕
+                    HStack(spacing: 5) {
+                        ForEach([0.5, 1.0, 2.0, 3.0, 5.0], id: \.self) { sec in
+                            let isSelected = abs(animation.holdDuration - sec) < 0.05
+                            Button(action: {
+                                animation.holdDuration = sec
+                            }) {
+                                Text(sec == 2.0 ? l10n("2.0s (預設)", "2.0s (Def)") : String(format: "%.1fs", sec))
+                                    .font(.system(size: 9, weight: isSelected ? .bold : .medium))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(isSelected ? Color(hex: "#10B981") : Color.white.opacity(0.06))
+                                    .foregroundColor(isSelected ? .white : Color(white: 0.8))
+                                    .cornerRadius(4)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
         }
