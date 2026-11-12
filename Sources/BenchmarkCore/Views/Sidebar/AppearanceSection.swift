@@ -157,18 +157,28 @@ public struct AppearanceSection: View {
                     }
                     .pickerStyle(.radioGroup)
                     
-                    // 毛玻璃透光度微調滑桿 (遮光比例，越低越透光，預設 28%)
+                    // 毛玻璃通透度/透明度調節滑桿 (5% 濃郁磨砂 ~ 98% 極致通透晶瑩，預設 75%)
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
-                            Text(l10n("毛玻璃遮光度 (越低越透光)", "Glass Tint Opacity (lower = clearer)"))
+                            Text(l10n("毛玻璃通透度 (越高越透明)", "Glass Transparency (higher = clearer)"))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(String(format: "%.0f%%", container.glassOpacity * 100))
+                            Text(String(format: "%.0f%%", container.glassTransparency * 100))
                                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundColor(Color(hex: "#60A5FA"))
                         }
-                        Slider(value: $container.glassOpacity, in: 0.10...0.60, step: 0.02)
+                        Slider(
+                            value: Binding<Double>(
+                                get: { container.glassTransparency },
+                                set: { newVal in
+                                    container.glassTransparency = newVal
+                                    container.glassOpacity = max(0.02, min(0.95, 1.0 - newVal))
+                                }
+                            ),
+                            in: 0.05...0.98,
+                            step: 0.01
+                        )
                     }
                     .padding(.top, 4)
                 }

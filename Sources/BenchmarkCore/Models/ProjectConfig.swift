@@ -372,7 +372,8 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
     public var useCustomDimensionColor: Bool
     public var dimensionHeaderColorHex: String
     
-    // 5. 毛玻璃遮光度 (越低越透光，預設 0.28)
+    // 5. 毛玻璃通透度/透明度 (0.05=濃郁磨砂, 0.98=極限通透晶瑩, 預設 0.75 即 75% 透明度)
+    public var glassTransparency: Double
     public var glassOpacity: Double
     
     public init(
@@ -385,7 +386,8 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
         productColumnTitle: String = "產品 / 規格",
         useCustomDimensionColor: Bool = false,
         dimensionHeaderColorHex: String = "#9CA3AF",
-        glassOpacity: Double = 0.28
+        glassOpacity: Double = 0.28,
+        glassTransparency: Double = 0.75
     ) {
         self.glassMode = glassMode
         self.cornerRadius = cornerRadius
@@ -397,13 +399,14 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
         self.useCustomDimensionColor = useCustomDimensionColor
         self.dimensionHeaderColorHex = dimensionHeaderColorHex
         self.glassOpacity = glassOpacity
+        self.glassTransparency = glassTransparency
     }
     
     enum CodingKeys: String, CodingKey {
         case glassMode, cornerRadius, showHighlightBorder, showTopAnnotations, showAnnotationBorder
         case showDimensionMaxValue, productColumnTitle
         case useCustomDimensionColor, dimensionHeaderColorHex
-        case glassOpacity
+        case glassOpacity, glassTransparency
     }
     
     public init(from decoder: Decoder) throws {
@@ -418,6 +421,11 @@ public struct ContainerConfig: Codable, Equatable, Sendable {
         self.useCustomDimensionColor = try c.decodeIfPresent(Bool.self, forKey: .useCustomDimensionColor) ?? false
         self.dimensionHeaderColorHex = try c.decodeIfPresent(String.self, forKey: .dimensionHeaderColorHex) ?? "#9CA3AF"
         self.glassOpacity = (try? c.decodeIfPresent(Double.self, forKey: .glassOpacity)) ?? 0.28
+        if let trans = try? c.decodeIfPresent(Double.self, forKey: .glassTransparency) {
+            self.glassTransparency = trans
+        } else {
+            self.glassTransparency = max(0.05, min(0.98, 1.0 - self.glassOpacity))
+        }
     }
 }
 

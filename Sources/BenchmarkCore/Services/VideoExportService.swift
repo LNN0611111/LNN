@@ -254,10 +254,16 @@ public final class VideoExportService {
         window.contentView = hostingView
         hostingView.layoutSubtreeIfNeeded()
         
-        // Fast optimization: Cache settled CGImage for hold duration frames
-        var lastSettledCGImage: CGImage? = nil
+        // Fast optimization & Multi-Core Parallel Batch Pipeline
+        let activeCores = ProcessInfo.processInfo.activeProcessorCount
+        let batchSize = min(16, max(4, activeCores))
         
-        for f in 0..<totalFrames {
+        var frameIndex = 0
+        var cachedRep: NSBitmapImageRep? = nil
+        var lastSettledCGImage: CGImage? = nil
+        var lastSettledPixelBuffer: CVPixelBuffer? = nil
+        
+        while frameIndex < totalFrames {
             if isCancelled {
                 writer.cancelWriting()
                 window.contentView = nil
@@ -270,88 +276,143 @@ public final class VideoExportService {
                 throw writer.error ?? ExportError.writerInitializationFailed("編碼器執行中發生錯誤 (status: \(writer.status.rawValue))")
             }
             
-            var waitCount = 0
-            while !writerInput.isReadyForMoreMediaData {
-                if isCancelled {
-                    writer.cancelWriting()
-                    window.contentView = nil
-                    window.orderOut(nil)
-                    try? FileManager.default.removeItem(at: actualOutputURL)
-                    throw ExportError.cancelled
-                }
-                if writer.status == .failed || writer.status == .cancelled {
-                    throw writer.error ?? ExportError.writerInitializationFailed("編碼器執行中發生錯誤 (status: \(writer.status.rawValue))")
-                }
-                
-                // Pump UI events while waiting for encoder buffer
-                while let event = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) {
-                    NSApp.sendEvent(event)
-                }
-                
-                try await Task.sleep(nanoseconds: 5_000_000) // 5ms
-                waitCount += 1
-                if waitCount > 2000 { // 10s timeout protection
-                    throw writer.error ?? ExportError.writerInitializationFailed("編碼器逾時未就緒 (Frame \(f), status: \(writer.status.rawValue))")
-                }
-            }
+            let currentBatchCount = min(batchSize, totalFrames - frameIndex)
+            let firstFrameTime = Double(frameIndex) / Double(fps)
             
-            let time = Double(f) / Double(fps)
-            let presentationTime = CMTime(value: Int64(f), timescale: Int32(fps))
-            
-            // 擷取自訂背景影片對應時間點的影格
-            var currentVideoFrame: CGImage? = nil
-            if let gen = videoImageGenerator {
-                let targetSec = project.customVideoConfig.trimStartTime + time
-                let cmT = CMTime(seconds: targetSec, preferredTimescale: 600)
-                currentVideoFrame = try? gen.copyCGImage(at: cmT, actualTime: nil)
-            }
-            
-            // Fast Optimization: If settled during hold duration, reuse final frame! (自訂動態影片或動態平鋪背景除外)
-            if exportConfig.enableFastOptimization && !isAnimatedBackground, time >= animationEndTime, let cachedImage = lastSettledCGImage {
-                try autoreleasepool {
-                    if let pb = pixelBuffer(from: cachedImage, width: width, height: height, pool: adaptor.pixelBufferPool) {
-                        let ok = adaptor.append(pb, withPresentationTime: presentationTime)
+            // 快顯路徑：若整個批次均處於定格時段且非動態平移背景，直接調用零拷貝/極速緩衝區複用
+            if exportConfig.enableFastOptimization && !isAnimatedBackground && firstFrameTime >= animationEndTime, let settledPB = lastSettledPixelBuffer {
+                for b in 0..<currentBatchCount {
+                    let f = frameIndex + b
+                    let pts = CMTime(value: Int64(f), timescale: Int32(fps))
+                    
+                    var waitCount = 0
+                    while !writerInput.isReadyForMoreMediaData {
+                        if isCancelled { throw ExportError.cancelled }
+                        try await Task.sleep(nanoseconds: 2_000_000)
+                        waitCount += 1
+                        if waitCount > 2000 {
+                            throw writer.error ?? ExportError.writerInitializationFailed("編碼器逾時未就緒 (Frame \(f))")
+                        }
+                    }
+                    
+                    if let cloned = self.clonePixelBuffer(settledPB, pool: adaptor.pixelBufferPool, width: width, height: height) {
+                        let ok = adaptor.append(cloned, withPresentationTime: pts)
                         if !ok {
-                            throw writer.error ?? ExportError.writerInitializationFailed("寫入快取幀失敗 (Frame \(f))")
+                            throw writer.error ?? ExportError.writerInitializationFailed("寫入快取影格失敗 (Frame \(f))")
                         }
                     }
                 }
-            } else {
-                try autoreleasepool {
-                    hostingView.rootView = makeExportView(project: project, time: time, size: resolution, videoFrame: currentVideoFrame)
-                    hostingView.layoutSubtreeIfNeeded()
-                    
-                    guard let rep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds) else {
-                        throw ExportError.renderFailed(f)
+                
+                frameIndex += currentBatchCount
+                let progress = Double(frameIndex) / Double(totalFrames)
+                let progressPercent = Int(progress * 100)
+                onProgress(progress, l10n("影片編碼中: \(progressPercent)%", "Encoding video: \(progressPercent)%"))
+                
+                while let event = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+                continue
+            }
+            
+            // 階段一：逐幀畫面生成（優先調用 macOS 13+ ImageRenderer 硬體著色，失敗則回退至 HostingView）
+            var batchImages = [CGImage?](repeating: nil, count: currentBatchCount)
+            var batchTimes = [Double](repeating: 0.0, count: currentBatchCount)
+            var batchPTS = [CMTime](repeating: .zero, count: currentBatchCount)
+            
+            for b in 0..<currentBatchCount {
+                let f = frameIndex + b
+                let time = Double(f) / Double(fps)
+                let pts = CMTime(value: Int64(f), timescale: Int32(fps))
+                batchTimes[b] = time
+                batchPTS[b] = pts
+                
+                if exportConfig.enableFastOptimization && !isAnimatedBackground && time >= animationEndTime, let cached = lastSettledCGImage {
+                    batchImages[b] = cached
+                } else {
+                    var currentVideoFrame: CGImage? = nil
+                    if let gen = videoImageGenerator {
+                        let targetSec = project.customVideoConfig.trimStartTime + time
+                        let cmT = CMTime(seconds: targetSec, preferredTimescale: 600)
+                        currentVideoFrame = try? gen.copyCGImage(at: cmT, actualTime: nil)
                     }
-                    hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
-                    guard let cgImage = rep.cgImage else {
+                    
+                    let exportView = makeExportView(project: project, time: time, size: resolution, videoFrame: currentVideoFrame)
+                    var renderedImg: CGImage? = nil
+                    
+                    if #available(macOS 13.0, *) {
+                        let renderer = ImageRenderer(content: exportView)
+                        renderer.scale = 1.0
+                        renderedImg = renderer.cgImage
+                    }
+                    
+                    if renderedImg == nil {
+                        hostingView.rootView = exportView
+                        hostingView.layoutSubtreeIfNeeded()
+                        if cachedRep == nil {
+                            cachedRep = hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds)
+                        }
+                        if let rep = cachedRep {
+                            hostingView.cacheDisplay(in: hostingView.bounds, to: rep)
+                            renderedImg = rep.cgImage
+                        }
+                    }
+                    
+                    guard let finalImg = renderedImg else {
                         throw ExportError.renderFailed(f)
                     }
                     
                     if time >= animationEndTime && lastSettledCGImage == nil && !isAnimatedBackground {
-                        lastSettledCGImage = cgImage
+                        lastSettledCGImage = finalImg
                     }
-                    
-                    guard let pixelBuffer = pixelBuffer(from: cgImage, width: width, height: height, pool: adaptor.pixelBufferPool) else {
-                        throw ExportError.pixelBufferCreationFailed
-                    }
-                    let ok = adaptor.append(pixelBuffer, withPresentationTime: presentationTime)
-                    if !ok {
-                        throw writer.error ?? ExportError.writerInitializationFailed("寫入影格失敗 (Frame \(f))")
-                    }
+                    batchImages[b] = finalImg
                 }
             }
             
-            let progress = Double(f + 1) / Double(totalFrames)
+            // 階段二：調用全部 CPU 核心並行轉碼（DispatchQueue.concurrentPerform 滿載所有超大核、大核與效能核）
+            var batchPixelBuffers = [CVPixelBuffer?](repeating: nil, count: currentBatchCount)
+            let pool = adaptor.pixelBufferPool
+            
+            DispatchQueue.concurrentPerform(iterations: currentBatchCount) { b in
+                guard let img = batchImages[b] else { return }
+                batchPixelBuffers[b] = self.pixelBuffer(from: img, width: width, height: height, pool: pool)
+            }
+            
+            // 階段三：按幀序直通 VideoToolbox Media Engine 硬體編碼器
+            for b in 0..<currentBatchCount {
+                let f = frameIndex + b
+                guard let pb = batchPixelBuffers[b] else {
+                    throw ExportError.pixelBufferCreationFailed
+                }
+                
+                if batchTimes[b] >= animationEndTime && lastSettledPixelBuffer == nil && !isAnimatedBackground {
+                    lastSettledPixelBuffer = pb
+                }
+                
+                var waitCount = 0
+                while !writerInput.isReadyForMoreMediaData {
+                    if isCancelled { throw ExportError.cancelled }
+                    try await Task.sleep(nanoseconds: 2_000_000)
+                    waitCount += 1
+                    if waitCount > 2000 {
+                        throw writer.error ?? ExportError.writerInitializationFailed("編碼器逾時未就緒 (Frame \(f))")
+                    }
+                }
+                
+                let ok = adaptor.append(pb, withPresentationTime: batchPTS[b])
+                if !ok {
+                    throw writer.error ?? ExportError.writerInitializationFailed("寫入影格失敗 (Frame \(f))")
+                }
+            }
+            
+            frameIndex += currentBatchCount
+            let progress = Double(frameIndex) / Double(totalFrames)
             let progressPercent = Int(progress * 100)
             onProgress(progress, l10n("影片編碼中: \(progressPercent)%", "Encoding video: \(progressPercent)%"))
             
-            // Critical: Pump pending AppKit events and sleep 1ms so UI stays 100% responsive
+            // 讓主線程平滑處理 UI 事件，保持視窗 100% 靈活響應
             while let event = NSApp.nextEvent(matching: .any, until: .distantPast, inMode: .default, dequeue: true) {
                 NSApp.sendEvent(event)
             }
-            try? await Task.sleep(nanoseconds: 1_000_000) // 1ms
         }
         
         window.contentView = nil
@@ -395,6 +456,16 @@ public final class VideoExportService {
             videoFrame = try? gen.copyCGImage(at: CMTime(seconds: targetSec, preferredTimescale: 600), actualTime: nil)
         }
         
+        let exportView = makeExportView(project: project, time: time, size: size, videoFrame: videoFrame)
+        
+        if #available(macOS 13.0, *) {
+            let renderer = ImageRenderer(content: exportView)
+            renderer.scale = 1.0
+            if let img = renderer.cgImage {
+                return img
+            }
+        }
+        
         let window = NSWindow(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.borderless],
@@ -403,9 +474,7 @@ public final class VideoExportService {
         )
         window.isReleasedWhenClosed = false
         
-        let hostingView = NSHostingView(
-            rootView: makeExportView(project: project, time: time, size: size, videoFrame: videoFrame)
-        )
+        let hostingView = NSHostingView(rootView: exportView)
         hostingView.frame = CGRect(origin: .zero, size: size)
         window.contentView = hostingView
         hostingView.layoutSubtreeIfNeeded()
@@ -540,6 +609,48 @@ public final class VideoExportService {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         
         return pb
+    }
+    
+    // MARK: - Fast Frame Memory Clone for Settle Frames
+    private func clonePixelBuffer(_ src: CVPixelBuffer, pool: CVPixelBufferPool?, width: Int, height: Int) -> CVPixelBuffer? {
+        var dst: CVPixelBuffer? = nil
+        if let pool = pool {
+            _ = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &dst)
+        }
+        if dst == nil {
+            let attrs: [CFString: Any] = [
+                kCVPixelBufferCGImageCompatibilityKey: true,
+                kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
+                kCVPixelBufferMetalCompatibilityKey: true
+            ]
+            _ = CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs as CFDictionary, &dst)
+        }
+        guard let dstPB = dst else { return nil }
+        
+        CVPixelBufferLockBaseAddress(src, .readOnly)
+        CVPixelBufferLockBaseAddress(dstPB, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(src, .readOnly)
+            CVPixelBufferUnlockBaseAddress(dstPB, [])
+        }
+        
+        guard let srcBase = CVPixelBufferGetBaseAddress(src),
+              let dstBase = CVPixelBufferGetBaseAddress(dstPB) else { return nil }
+        
+        let srcBpr = CVPixelBufferGetBytesPerRow(src)
+        let dstBpr = CVPixelBufferGetBytesPerRow(dstPB)
+        let h = CVPixelBufferGetHeight(src)
+        
+        if srcBpr == dstBpr {
+            memcpy(dstBase, srcBase, srcBpr * h)
+        } else {
+            let copyBytes = min(srcBpr, dstBpr)
+            for row in 0..<h {
+                memcpy(dstBase.advanced(by: row * dstBpr), srcBase.advanced(by: row * srcBpr), copyBytes)
+            }
+        }
+        return dstPB
     }
     
     private func savePNG(cgImage: CGImage, to url: URL) throws {

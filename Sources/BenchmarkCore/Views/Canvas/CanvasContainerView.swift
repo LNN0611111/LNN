@@ -153,20 +153,29 @@ public struct CanvasContainerView: View {
                     RoundedRectangle(cornerRadius: project.container.cornerRadius)
                         .fill(Color(hex: "#FFFFFF")) // 100% 不透明純淨亮白底色
                 }
-            } else if isDark {
-                RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                            .fill(Color.black.opacity(project.container.glassOpacity))
-                    )
             } else {
-                RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                    .fill(.thinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: project.container.cornerRadius)
-                            .fill(Color.white.opacity(min(0.85, max(0.15, project.container.glassOpacity * 1.8))))
-                    )
+                let trans = project.container.glassTransparency
+                // 通透度計算：trans=0.05 (濃郁磨砂, 遮蔽度高), trans=0.98 (極限透明, 幾近全透)
+                let matOpacity = max(0.04, 1.0 - trans)
+                let tintOpacity = (1.0 - trans) * (isDark ? 0.38 : 0.42)
+                
+                if isDark {
+                    RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                        .fill(.ultraThinMaterial)
+                        .opacity(matOpacity)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                                .fill(Color.black.opacity(tintOpacity))
+                        )
+                } else {
+                    RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                        .fill(.thinMaterial)
+                        .opacity(matOpacity)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: project.container.cornerRadius)
+                                .fill(Color.white.opacity(tintOpacity))
+                        )
+                }
             }
             
             // 細微亮邊框 (1px 漸層描邊，綠幕模式採用不透綠純淨漸層)

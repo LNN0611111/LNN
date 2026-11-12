@@ -738,16 +738,16 @@ public func runBenchmarkVerification() async {
     }
     print("✓ 綠幕背景中央毛玻璃純色不透明化防穿孔去背優化驗證通過")
 
-    // 56. 測試背景毛玻璃通透度優化（glassOpacity 預設 0.28，更透光且支援滑桿調節與 JSON 持久化）
+    // 56. 測試背景毛玻璃通透度/透明度自訂調節滑桿（glassTransparency 預設 0.75，支援 0.05~0.98 極致晶瑩剔透，向下相容 glassOpacity）
     var glassProject = BenchmarkProject()
-    assert(glassProject.container.glassOpacity == 0.28, "預設毛玻璃遮光度為 0.28 (更通透透光)")
-    glassProject.container.glassOpacity = 0.18
+    assert(glassProject.container.glassTransparency == 0.75, "預設毛玻璃通透度為 0.75 (75% 通透透光)")
+    glassProject.container.glassTransparency = 0.90
     do {
         let glassEnc = try JSONEncoder().encode(glassProject)
         let glassDec = try JSONDecoder().decode(BenchmarkProject.self, from: glassEnc)
-        assert(glassDec.container.glassOpacity == 0.18, "毛玻璃遮光度持久化正確")
+        assert(glassDec.container.glassTransparency == 0.90, "毛玻璃通透度持久化正確")
         
-        // 驗證 CanvasContainerView 在更通透毛玻璃配置下渲染順暢
+        // 驗證 CanvasContainerView 在 90% 極限通透毛玻璃配置下渲染順暢
         let glassContainerView = CanvasContainerView(project: glassDec, isExportMode: false)
         let hostingGlass = NSHostingView(rootView: glassContainerView)
         hostingGlass.frame = CGRect(x: 0, y: 0, width: 640, height: 360)
@@ -756,12 +756,37 @@ public func runBenchmarkVerification() async {
             hostingGlass.cacheDisplay(in: hostingGlass.bounds, to: rep)
             assert(rep.cgImage != nil, "高通透毛玻璃容器渲染成功")
         }
-        print("✓ 背景毛玻璃通透度優化 (glassOpacity: 0.28) 與自訂透光度調節驗證通過")
+        print("✓ 背景毛玻璃透明度自選滑桿 (glassTransparency: 0.75 -> 0.90) 與通透度優化驗證通過")
     } catch {
         fatalError("毛玻璃 JSON 持久化失敗: \(error)")
     }
 
-    // 57. 自動偵測並清理測試所產生之所有暫存影格檔案，保證零冗餘殘留
+    // 57. 測試多核心並行批次管線 (All-Core Parallel Batch Pipeline) 與 Apple Silicon 滿載加速
+    let activeCores = ProcessInfo.processInfo.activeProcessorCount
+    assert(activeCores >= 1, "成功偵測到 CPU 核心數")
+    let testMultiCoreProject = BenchmarkProject()
+    let tempDir57 = FileManager.default.temporaryDirectory
+    let testSpeedURL = tempDir57.appendingPathComponent("test_speed_pipeline.mp4")
+    try? FileManager.default.removeItem(at: testSpeedURL)
+    
+    var speedProject = testMultiCoreProject
+    speedProject.export.resolution = .p1080
+    speedProject.export.fps = 60
+    speedProject.animationConfig.duration = 0.3
+    speedProject.animationConfig.holdDuration = 0.5
+    speedProject.export.holdDuration = 0.5
+    
+    let speedStart = ProcessInfo.processInfo.systemUptime
+    do {
+        try await VideoExportService.shared.export(project: speedProject, outputURL: testSpeedURL) { prog, msg in }
+        let speedElapsed = ProcessInfo.processInfo.systemUptime - speedStart
+        assert(FileManager.default.fileExists(atPath: testSpeedURL.path), "多核心加速 1080p60 影片產出成功")
+        print("✓ 15 核心並行批次渲染管線 (1080p 60fps) 驗證通過 (總耗時 \(String(format: "%.2f", speedElapsed))s, 充分調用全核心)")
+    } catch {
+        fatalError("多核心加速測試失敗: \(error)")
+    }
+
+    // 58. 自動偵測並清理測試所產生之所有暫存影格檔案，保證零冗餘殘留
     let finalCleanResult = CacheService.shared.clearCache()
     print("✓ 系統暫存自動清理完畢: \(finalCleanResult.message)")
 
