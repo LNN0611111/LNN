@@ -1,48 +1,107 @@
 import SwiftUI
-import AVKit
 import AVFoundation
+import AppKit
 
 @MainActor
 public final class VideoTrimState: ObservableObject {
-    @Published public var player: AVPlayer?
+    @Published public var currentFrame: CGImage?
     @Published public var isPlaying: Bool = false
     @Published public var currentTime: Double = 0.0
     @Published public var videoTotalDuration: Double = 0.0
     @Published public var startVal: Double = 0.0
     @Published public var endVal: Double = 0.0
-    public var timeObserver: Any?
+    
+    private var asset: AVURLAsset?
+    private var generator: AVAssetImageGenerator?
+    private var timer: Timer?
     
     public init() {}
     
+    public func load(url: URL, config: CustomVideoConfig) {
+        let asset = AVURLAsset(url: url)
+        self.asset = asset
+        
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: 960, height: 540)
+        gen.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)
+        gen.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: 600)
+        self.generator = gen
+        
+        Task {
+            let duration = (try? await asset.load(.duration)) ?? .zero
+            let totalSeconds = CMTimeGetSeconds(duration)
+            let safeTotal = (totalSeconds.isNaN || totalSeconds <= 0) ? 10.0 : totalSeconds
+            
+            await MainActor.run {
+                self.videoTotalDuration = safeTotal
+                self.startVal = max(0.0, config.trimStartTime)
+                if config.trimEndTime > self.startVal && config.trimEndTime <= self.videoTotalDuration {
+                    self.endVal = config.trimEndTime
+                } else {
+                    self.endVal = self.videoTotalDuration
+                }
+                self.currentTime = self.startVal
+                self.updateFrame(at: self.startVal)
+            }
+        }
+    }
+    
     public func seekTo(_ seconds: Double) {
-        guard let p = player else { return }
-        let target = CMTime(seconds: seconds, preferredTimescale: 600)
-        p.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero)
-        self.currentTime = seconds
+        self.currentTime = min(max(0, seconds), videoTotalDuration)
+        updateFrame(at: self.currentTime)
+    }
+    
+    public func updateFrame(at seconds: Double) {
+        guard let gen = generator else { return }
+        let cmTime = CMTime(seconds: seconds, preferredTimescale: 600)
+        if let cgImg = try? gen.copyCGImage(at: cmTime, actualTime: nil) {
+            self.currentFrame = cgImg
+        }
     }
     
     public func togglePlay() {
-        guard let p = player else { return }
         if isPlaying {
-            p.pause()
-            isPlaying = false
+            stopPlay()
         } else {
-            if currentTime >= endVal {
-                seekTo(startVal)
-            }
-            p.play()
-            isPlaying = true
+            startPlay()
         }
     }
     
-    public func stopAndClean() {
-        if let p = player, let obs = timeObserver {
-            p.removeTimeObserver(obs)
-            timeObserver = nil
+    public func startPlay() {
+        isPlaying = true
+        if currentTime >= endVal {
+            currentTime = startVal
         }
-        player?.pause()
-        player = nil
+        timer?.invalidate()
+        let interval: Double = 1.0 / 30.0
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self, self.isPlaying else { return }
+                self.currentTime += interval
+                if self.currentTime >= self.endVal {
+                    self.currentTime = self.startVal
+                }
+                self.updateFrame(at: self.currentTime)
+            }
+        }
+    }
+    
+    public func stopPlay() {
         isPlaying = false
+        timer?.invalidate()
+        timer = nil
+    }
+    
+    public func stopAndClean() {
+        stopPlay()
+        generator = nil
+        asset = nil
+        currentFrame = nil
+    }
+    
+    deinit {
+        timer?.invalidate()
     }
 }
 
@@ -117,42 +176,31 @@ public struct VideoTrimCropModalView: View {
             // MARK: - Body Content
             ScrollView {
                 VStack(spacing: 16) {
-                    // 1. 可視化影片播放與裁切輔助框 (Video Player Preview Box with Visual Crop Overlay)
+                    // 1. 可視化影片預覽視窗 (純 SwiftUI 解碼渲染，保證絕不崩潰)
                     ZStack {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color.black)
                         
-                        if let player = state.player {
+                        if let frame = state.currentFrame {
                             GeometryReader { geo in
                                 let w = geo.size.width
                                 let h = geo.size.height
-                                let isFill = (config.contentMode == "fill")
                                 let targetRatio = parseAspectRatioValue(config.cropAspectRatio)
                                 
                                 ZStack {
-                                    // 影片播放層
-                                    VideoPlayer(player: player)
-                                        .aspectRatio(contentMode: isFill ? .fill : .fit)
-                                        .frame(width: w, height: h)
-                                        .clipped()
+                                    MediaFrameView(
+                                        cgImage: frame,
+                                        cropAspectRatio: config.cropAspectRatio,
+                                        contentMode: config.contentMode
+                                    )
+                                    .frame(width: w, height: h)
+                                    .clipped()
                                     
                                     // 預設比例可視化裁切框與九宮格輔助線
                                     if let ratio = targetRatio {
                                         let containerRatio = w / max(1, h)
                                         let boxW: CGFloat = (ratio > containerRatio) ? w * 0.92 : h * 0.92 * ratio
                                         let boxH: CGFloat = (ratio > containerRatio) ? (w * 0.92) / ratio : h * 0.92
-                                        
-                                        // 半透明遮罩 (外部暗化，聚焦裁切區域)
-                                        Rectangle()
-                                            .fill(Color.black.opacity(0.45))
-                                            .mask(
-                                                Rectangle()
-                                                    .overlay(
-                                                        RoundedRectangle(cornerRadius: 6)
-                                                            .frame(width: boxW, height: boxH)
-                                                            .blendMode(.destinationOut)
-                                                    )
-                                            )
                                         
                                         // 裁切框邊框與九宮格
                                         RoundedRectangle(cornerRadius: 6)
@@ -279,12 +327,14 @@ public struct VideoTrimCropModalView: View {
                                 if state.startVal >= state.endVal {
                                     state.endVal = min(state.videoTotalDuration, state.startVal + 0.5)
                                 }
+                                state.seekTo(state.startVal)
                             }
                             .buttonStyle(.bordered)
                             .font(.system(size: 10))
                             
                             Button(l10n("設終點為當前點", "Set End = Now")) {
                                 state.endVal = max(state.startVal + 0.5, state.currentTime)
+                                state.seekTo(state.endVal)
                             }
                             .buttonStyle(.bordered)
                             .font(.system(size: 10))
@@ -406,43 +456,10 @@ public struct VideoTrimCropModalView: View {
         .frame(width: 600, height: 620)
         .background(Color(white: 0.13))
         .onAppear {
-            setupPlayer()
+            state.load(url: videoURL, config: config)
         }
         .onDisappear {
             state.stopAndClean()
-        }
-    }
-    
-    private func setupPlayer() {
-        let asset = AVURLAsset(url: videoURL)
-        Task {
-            let duration = (try? await asset.load(.duration)) ?? .zero
-            let totalSeconds = CMTimeGetSeconds(duration)
-            await MainActor.run {
-                state.videoTotalDuration = max(0.1, totalSeconds)
-                state.startVal = max(0.0, config.trimStartTime)
-                if config.trimEndTime > state.startVal && config.trimEndTime <= state.videoTotalDuration {
-                    state.endVal = config.trimEndTime
-                } else {
-                    state.endVal = state.videoTotalDuration
-                }
-                
-                let p = AVPlayer(url: videoURL)
-                p.isMuted = true
-                state.player = p
-                
-                let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
-                state.timeObserver = p.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak state] time in
-                    Task { @MainActor in
-                        guard let state = state else { return }
-                        state.currentTime = CMTimeGetSeconds(time)
-                        if state.currentTime >= state.endVal {
-                            state.seekTo(state.startVal)
-                        }
-                    }
-                }
-                state.seekTo(state.startVal)
-            }
         }
     }
     

@@ -297,17 +297,19 @@ public struct ExportModalView: View {
             panel.allowedContentTypes = [UTType.zip]
         }
         
-        if panel.runModal() == .OK, let targetURL = panel.url {
-            exportVM.isExporting = true
-            exportVM.errorMessage = nil
-            exportVM.progress = 0.0
-            exportVM.statusMessage = l10n("正在初始化編碼器...", "Initializing encoder...")
+        panel.begin { response in
+            guard response == .OK, let targetURL = panel.url else { return }
+            
+            self.exportVM.isExporting = true
+            self.exportVM.errorMessage = nil
+            self.exportVM.progress = 0.0
+            self.exportVM.statusMessage = l10n("正在初始化編碼器...", "Initializing encoder...")
             
             Task {
                 do {
-                    var updatedProject = project
-                    updatedProject.export = exportConfig
-                    if exportConfig.codec.requiresMOVContainer && updatedProject.export.format == .mp4 {
+                    var updatedProject = self.project
+                    updatedProject.export = self.exportConfig
+                    if self.exportConfig.codec.requiresMOVContainer && updatedProject.export.format == .mp4 {
                         updatedProject.export.format = .mov
                     }
                     

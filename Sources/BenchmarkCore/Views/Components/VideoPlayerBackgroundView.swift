@@ -1,5 +1,5 @@
 import SwiftUI
-import AVKit
+import AVFoundation
 import AppKit
 
 /// 解析畫面比例字串為數值 (如 "16:9" -> 1.7777...)
